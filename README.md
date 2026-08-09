@@ -6,7 +6,7 @@ The platform lets you configure, launch and analyze federated symbolic learning 
 
 ## What it does
 
-- **Learning by Collaboration** *(available)* — a central [Popper](https://github.com/logic-and-learning-lab/Popper) server generates candidate logic programs; distributed clients evaluate them locally against private data partitions and return symbolic feedback (never raw examples) via [Flower](https://flower.ai).
+- **Learning by Collaboration** *(available)* — a central [Popper](https://github.com/logic-and-learning-lab/Popper) (v 1.1.0) server generates candidate logic programs; distributed clients evaluate them locally against private data partitions and return symbolic feedback (never raw examples) via [Flower](https://flower.ai).
 - **Learning by Coordination** *(planned)* — coordination-space architecture based on [Bach4Popper](https://link.springer.com/chapter/10.1007/978-3-032-28358-0_7).
 - **Learning by Consensus** *(planned)* — consensus-based aggregation across multiple ILP learners.
 
@@ -53,4 +53,4 @@ Akaichi, Y., Barkallah, M., Jacquet, J.-M., Linden, I., & Vanhoof, W. (2026). *B
 
 ## Author
 
-**Yasmine Akaichi** — PhD Candidate in Artificial Intelligence, Université de Namur & Université Clermont Auvergne. [LinkedIn](https://www.linkedin.com/in/yasmine-akaichi-761975197/)
+**Yasmine Akaichi** — PhD Candidate in Artificial Intelligence, Université de Namur. [LinkedIn](https://www.linkedin.com/in/yasmine-akaichi-761975197/)
