@@ -1,0 +1,21 @@
+<svg viewBox="0 0 320 90" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="filpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5B7FDE" />
+      <stop offset="100%" stop-color="#22C1DC" />
+    </linearGradient>
+  </defs>
+
+  <g>
+    <line x1="45" y1="45" x2="45" y2="15" stroke="url(#filpGrad)" stroke-width="3" stroke-linecap="round" />
+    <line x1="45" y1="45" x2="21" y2="61" stroke="url(#filpGrad)" stroke-width="3" stroke-linecap="round" />
+    <line x1="45" y1="45" x2="69" y2="61" stroke="url(#filpGrad)" stroke-width="3" stroke-linecap="round" />
+
+    <circle cx="45" cy="45" r="11" fill="url(#filpGrad)" />
+    <circle cx="45" cy="15" r="7" fill="#ffffff" stroke="url(#filpGrad)" stroke-width="3" />
+    <circle cx="21" cy="61" r="7" fill="#ffffff" stroke="url(#filpGrad)" stroke-width="3" />
+    <circle cx="69" cy="61" r="7" fill="#ffffff" stroke="url(#filpGrad)" stroke-width="3" />
+  </g>
+
+  <text x="98" y="58" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="42" font-weight="800" fill="#1F2430">FILP</text>
+</svg>

@@ -1,0 +1,7 @@
+flwr
+numpy
+clingo
+pyswip
+setuptools<81
+streamlit
+pandas
