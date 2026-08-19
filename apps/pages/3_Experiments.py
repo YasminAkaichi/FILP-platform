@@ -444,6 +444,7 @@ def split_examples(examples_text: str) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------
 
 def launch_benchmark(
+    approach: str,
     dataset: str,
     number_of_clients: int,
     partition_strategy: str,
@@ -454,7 +455,7 @@ def launch_benchmark(
 ) -> None:
     config = BenchmarkConfig(
         name=benchmark_name.strip(),
-        approach="collaboration",
+        approach=approach,
         dataset=dataset,
         number_of_clients=int(number_of_clients),
         partition_strategy=partition_strategy,
@@ -539,8 +540,37 @@ def render_how_it_works() -> None:
             )
 
 
+APPROACH_OPTIONS = {
+    "collaboration": {"label": "Learning by Collaboration", "available": True},
+    "coordination": {"label": "Learning by Coordination", "available": False},
+    "consensus": {"label": "Learning by Consensus", "available": False},
+}
+
+
 def render_new_benchmark_form() -> None:
-    st.caption("Choose your setup, then launch the run.")
+    st.caption("Choose an approach, then configure your setup.")
+
+    # Outside the form on purpose: st.form() only reruns on submit, but we
+    # need the page to react immediately when the approach changes (to
+    # show/hide the config fields below).
+    approach = st.selectbox(
+        "Approach to test",
+        options=list(APPROACH_OPTIONS.keys()),
+        format_func=lambda key: (
+            f"{APPROACH_OPTIONS[key]['label']}"
+            + ("" if APPROACH_OPTIONS[key]["available"] else " — coming soon")
+        ),
+        help="Only Learning by Collaboration is implemented today. Coordination and Consensus are on the roadmap.",
+    )
+
+    if not APPROACH_OPTIONS[approach]["available"]:
+        st.info(
+            f"**{APPROACH_OPTIONS[approach]['label']}** isn't implemented in FILP "
+            "yet, so there's nothing to configure here for it. See the Approaches "
+            "page for what's planned."
+        )
+        st.page_link("pages/1_Approaches.py", label="View the research roadmap")
+        return
 
     with st.form("benchmark_form"):
         column_1, column_2 = st.columns(2)
@@ -589,14 +619,14 @@ def render_new_benchmark_form() -> None:
                 help="Safety cap on federated learning rounds before the run stops.",
             )
 
-        default_name = f"{dataset}_collaboration_k{number_of_clients}_{partition_strategy}"
+        default_name = f"{dataset}_{approach}_k{number_of_clients}_{partition_strategy}"
         benchmark_name = st.text_input("Benchmark name", value=default_name)
 
         st.markdown(
             '<div class="section-caption">You are about to run '
             f"<b>{number_of_runs}</b> run(s) on <b>{dataset}</b>, split "
             f"<b>{partition_strategy.upper()}</b> across <b>{number_of_clients}</b> "
-            f"clients, capped at <b>{rounds}</b> rounds.</div>",
+            "clients.</div>",
             unsafe_allow_html=True,
         )
 
@@ -606,6 +636,7 @@ def render_new_benchmark_form() -> None:
 
     if submitted:
         launch_benchmark(
+            approach=approach,
             dataset=dataset,
             number_of_clients=number_of_clients,
             partition_strategy=partition_strategy,
@@ -617,7 +648,7 @@ def render_new_benchmark_form() -> None:
 
 
 if hasattr(st, "dialog"):
-    _new_benchmark_dialog = st.dialog("🚀 New benchmark", width="large")(
+    _new_benchmark_dialog = st.dialog("New benchmark", width="large")(
         render_new_benchmark_form
     )
 else:

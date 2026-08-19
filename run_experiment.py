@@ -2,7 +2,7 @@ from core.experiment import ExperimentConfig
 from core.launcher import ExperimentLauncher
 
 config = ExperimentConfig(
-    approach="collaboration",
+    approach="coordination",
     dataset="zendo1",
     number_of_clients=10,
     partition_strategy="non_iid",

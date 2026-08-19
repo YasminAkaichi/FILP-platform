@@ -333,45 +333,28 @@ with collaboration_tab:
 
     st.markdown(
         '<div class="approach-hero">'
-        + render_badge(" Available now", "success")
+        + render_badge("Available now", "success")
         + '<div class="section-title" style="font-size:1.6rem; margin-top:10px;">Learning by Collaboration</div>'
-        + "<p>Federated symbolic learning without sharing raw examples. Several "
-        "clients collaboratively learn an interpretable logic program while "
-        "keeping their local examples private: a central Popper server "
-        "generates candidate hypotheses, each client evaluates them against "
-        "its local data, and returns symbolic feedback rather than raw "
-        "examples or numerical gradients.</p>"
+        + "<p>FedPopper federates Popper's generate-test-constrain loop: a "
+        "central server generates candidate hypotheses and a set of clients "
+        "test them against their own local data. Clients never exchange "
+        "examples, background knowledge or gradients — only a coarse "
+        "symbolic outcome and a score reach the server.</p>"
         "</div>",
         unsafe_allow_html=True,
     )
 
-    render_chips(["🌸 Flower", "🧠 Popper", "📚 Inductive Logic Programming", "🌍 Federated Learning", "✨ Symbolic AI"])
-
-    st.write("")
-
-    cta_left, cta_right, _spacer = st.columns([2, 2, 3])
-    with cta_left:
-        st.page_link(
-            "pages/3_Experiments.py",
-            label="🧪 Try it on the Experiments page",
-            use_container_width=True,
-        )
-    with cta_right:
-        st.page_link(
-            "pages/2_Datasets.py",
-            label="📚 Explore the datasets first",
-            use_container_width=True,
-        )
+    render_chips(["Flower", "Popper", "Answer Set Programming", "Federated Learning", "Symbolic AI"])
 
     st.divider()
 
     # ---------------------------------------------------------------
-    # Overview
+    # Architecture
     # ---------------------------------------------------------------
 
-    st.markdown('<div class="section-title">Overview</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Architecture</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-caption">How the server and the clients split the work</div>',
+        '<div class="section-caption">The server never sees a client\'s data — only hypotheses go out, only outcomes come back</div>',
         unsafe_allow_html=True,
     )
 
@@ -384,7 +367,7 @@ with collaboration_tab:
             if collaboration_figure.is_file():
                 st.image(
                     str(collaboration_figure),
-                    caption="Learning by Collaboration architecture",
+                    caption="FedPopper architecture (Akaichi et al.)",
                     use_container_width=True,
                 )
             else:
@@ -392,50 +375,112 @@ with collaboration_tab:
                     f"Collaboration figure not found.\n\nExpected path: `{collaboration_figure}`"
                 )
 
-        st.write(
-            "The federated server manages the symbolic search: it generates a "
-            "candidate hypothesis, broadcasts it to the clients, aggregates the "
-            "returned outcomes and constructs new constraints. The clients only "
-            "perform local testing, their examples and background knowledge "
-            "remain local. The information exchanged is symbolic: outcomes, "
-            "scores, confusion-matrix values and clause-level feedback, never "
-            "raw data."
+    st.caption(
+        "The server holds the language bias and generates each candidate "
+        "hypothesis; it never accesses a client's dataset. Each client holds "
+        "a local partition (E+, E−, B) and tests the hypothesis locally, "
+        "returning only a symbolic outcome (ε+, ε−) and a score s = TP+TN — "
+        "never the underlying examples, background knowledge or coverage "
+        "counts."
+    )
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # How the aggregation works
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">How the aggregation works</div>', unsafe_allow_html=True)
+    st.write(
+        "At each round, the server broadcasts a hypothesis and collects one "
+        "symbolic outcome per client. Outcomes are combined into a single "
+        "global signal: ALL if every client reports ALL, NONE if every "
+        "client reports NONE, SOME otherwise. Scores are simply summed. "
+        "This aggregation is proven to match what centralized Popper would "
+        "compute on the pooled data, so federating the evaluation step does "
+        "not change what is learned — only how it is computed."
+    )
+
+    step_1, step_2, step_3, step_4 = st.columns(4)
+    with step_1:
+        render_info_card("Generate", "The server generates a candidate hypothesis from the constraints accumulated so far.")
+    with step_2:
+        render_info_card("Broadcast", "The hypothesis is sent to every client.")
+    with step_3:
+        render_info_card("Test", "Each client evaluates it locally and returns only its outcome and score.")
+    with step_4:
+        render_info_card("Aggregate & constrain", "The server combines the outcomes and derives the next constraint, or stops if the hypothesis is complete and consistent.")
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # What the paper shows
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">What the paper shows</div>', unsafe_allow_html=True)
+
+    result_1, result_2 = st.columns(2)
+    with result_1:
+        render_info_card(
+            "Correctness",
+            "Across all datasets and partitioning strategies tested, "
+            "FedPopper reaches the same hypothesis as centralized Popper, "
+            "matching it exactly in coverage.",
+        )
+    with result_2:
+        render_info_card(
+            "Cost of federation",
+            "The coordination overhead of federation is separable from the "
+            "symbolic search itself: the number of refinement rounds is "
+            "preserved, and the extra cost is purely communication and "
+            "synchronization.",
         )
 
     st.divider()
 
     # ---------------------------------------------------------------
-    # Protocol
+    # Research paper
     # ---------------------------------------------------------------
 
-    st.markdown('<div class="section-title">Protocol</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📄 Related publication</div>', unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.markdown(
+            "**Akaichi, Y., Jacquet, J.-M., Linden, I., & Vanhoof, W.** "
+            "*FedPopper: Federated Learning Logic Programs from Aggregated "
+            "Failures.* Manuscript under review."
+        )
+        st.caption(
+            "Code: Akaichi, Y., Jacquet, J.-M. The FedPopper Framework. "
+            "https://doi.org/10.5281/zenodo.20659933"
+        )
+
+
+# ===================================================================
+# LEARNING BY COORDINATION
+# ===================================================================
+
+with coordination_tab:
+
+    # ---------------------------------------------------------------
+    # Intro / hero
+    # ---------------------------------------------------------------
+
     st.markdown(
-        '<div class="section-caption">One round of the collaboration loop, step by step</div>',
+        '<div class="approach-hero">'
+        + render_badge("Published research", "success")
+        + '<div class="section-title" style="font-size:1.6rem; margin-top:10px;">Learning by Coordination</div>'
+        + "<p>Bach4Popper coordinates the federated generate-test-constrain "
+        "loop through <b>Bach</b>, a tuple-space coordination language "
+        "developed at the Nadi Research Institute (University of Namur), "
+        "instead of direct client-server message passing. Participants "
+        "read and write to a shared coordination store rather than "
+        "exchanging point-to-point requests.</p>"
+        "</div>",
         unsafe_allow_html=True,
     )
 
-    protocol_steps = [
-        ("Generate", "The server uses Popper to generate a candidate hypothesis from the current hypothesis space."),
-        ("Broadcast", "The candidate hypothesis is sent to every participating client."),
-        ("Evaluate", "Each client evaluates the hypothesis against its local examples."),
-        ("Return feedback", "Clients return ε outcomes, score, TP, FN, TN, FP and clause-level feedback."),
-        ("Aggregate", "The server combines client outcomes into a global symbolic decision."),
-        ("Constrain", "New constraints are generated before Popper searches for the next hypothesis."),
-    ]
-
-    row_1, row_2 = st.columns(3, gap="large"), st.columns(3, gap="large")
-
-    row_a, row_b = st.columns(3, gap="large"), st.columns(3, gap="large")
-
-    for column, (index, (title, body)) in zip(row_1, enumerate(protocol_steps[:3], start=1)):
-        with column:
-            render_step_card(index, title, body)
-
-    for column, (index, (title, body)) in zip(row_2, enumerate(protocol_steps[3:], start=4)):
-        with column:
-            render_step_card(index, title, body)
-
-    st.caption("Steps 1–6 repeat every round until Popper converges on a valid hypothesis or the round cap is reached.")
+    render_chips(["Bach", "Popper", "Tuple-space coordination", "Federated Learning", "Symbolic AI"])
 
     st.divider()
 
@@ -444,183 +489,105 @@ with collaboration_tab:
     # ---------------------------------------------------------------
 
     st.markdown('<div class="section-title">Architecture</div>', unsafe_allow_html=True)
-
-    server_column, client_column = st.columns(2)
-
-    with server_column:
-        st.markdown(
-            '<div class="role-card">'
-            + render_badge("Server-side", "neutral")
-            + "<h4>Federated server</h4>"
-            + "<ul>"
-            "<li>Candidate hypothesis generation</li>"
-            "<li>FedPopper strategy</li>"
-            "<li>Outcome aggregation</li>"
-            "<li>Score aggregation</li>"
-            "<li>Clause-feedback aggregation</li>"
-            "<li>Constraint generation</li>"
-            "<li>Best-program tracking</li>"
-            "</ul></div>",
-            unsafe_allow_html=True,
-        )
-
-    with client_column:
-        st.markdown(
-            '<div class="role-card">'
-            + render_badge("Client-side", "neutral")
-            + "<h4>Distributed clients</h4>"
-            + "<ul>"
-            "<li>Local dataset partition</li>"
-            "<li>Local background knowledge</li>"
-            "<li>Local Popper tester</li>"
-            "<li>TP, FN, TN and FP computation</li>"
-            "<li>Epsilon-positive outcome</li>"
-            "<li>Epsilon-negative outcome</li>"
-            "<li>Clause inconsistency testing</li>"
-            "<li>Clause total-incompleteness testing</li>"
-            "</ul></div>",
-            unsafe_allow_html=True,
-        )
-
-    st.divider()
-
-    # ---------------------------------------------------------------
-    # Information exchanged
-    # ---------------------------------------------------------------
-
-    st.markdown('<div class="section-title">Information exchanged</div>', unsafe_allow_html=True)
-
-    server_to_client, client_to_server = st.columns(2)
-
-    with server_to_client:
-        st.markdown("**Server → Clients**")
-        st.table(
-            {
-                "Information": ["Candidate hypothesis", "Current round"],
-                "Purpose": ["Local symbolic evaluation", "Execution tracking"],
-            }
-        )
-
-    with client_to_server:
-        st.markdown("**Clients → Server**")
-        st.table(
-            {
-                "Information": [
-                    "ε+",
-                    "ε−",
-                    "Local score",
-                    "TP / FN / TN / FP",
-                    "Inconsistent clauses",
-                    "Totally incomplete clauses",
-                ],
-                "Purpose": [
-                    "Completeness feedback",
-                    "Consistency feedback",
-                    "Hypothesis quality",
-                    "Detailed local evaluation",
-                    "Generalisation constraints",
-                    "Redundancy constraints",
-                ],
-            }
-        )
-
-    st.divider()
-
-    # ---------------------------------------------------------------
-    # Key characteristics
-    # ---------------------------------------------------------------
-
-    st.markdown('<div class="section-title">Key characteristics</div>', unsafe_allow_html=True)
-
-    characteristics = [
-        ("🔒", "Privacy-preserving", "Raw examples and local background knowledge remain on the clients."),
-        ("🧾", "Interpretable", "The learned model is an explicit logic program rather than a black-box numerical model."),
-        ("🤝", "Symbolic collaboration", "Clients return symbolic evaluation feedback instead of model parameters or raw data."),
-        ("⚙️", "Configurable", "Experiments support a variable number of clients and IID or Non-IID data distributions."),
-        ("🧭", "Constraint-driven", "Aggregated client feedback is transformed into constraints that guide the Popper search."),
-        ("📊", "Reproducible", "Experiment configurations, partitions, rules and execution results are recorded by the FILP Platform."),
-    ]
-
-    row_a, row_b = st.columns(3), st.columns(3)
-
-    for column, item in zip(row_a, characteristics[:3]):
-        with column:
-            render_feature_card(*item)
-
-    for column, item in zip(row_b, characteristics[3:]):
-        with column:
-            render_feature_card(*item)
-
-    st.write("")
-
-    with st.expander("Technical details: clause-level feedback"):
-        st.markdown(
-            "Clause-level inconsistency and total-incompleteness checks are "
-            "performed locally because they depend on private client data."
-        )
-        st.code(
-            "global_inconsistent(rule) = any(\n"
-            "    client.is_inconsistent(rule)\n"
-            "    for client in clients\n"
-            ")\n\n"
-            "global_totally_incomplete(rule) = all(\n"
-            "    client.is_totally_incomplete(rule)\n"
-            "    for client in clients\n"
-            ")",
-            language="python",
-        )
-
-    st.divider()
-
-    # ---------------------------------------------------------------
-    # Example output
-    # ---------------------------------------------------------------
-
-    st.markdown('<div class="section-title">Example learned rule</div>', unsafe_allow_html=True)
-    st.code(
-        "zendo(A):- size(C,D), contact(B,C), piece(A,B), red(B), small(D).",
-        language="prolog",
+    st.markdown(
+        '<div class="section-caption">The federated server and the client testers never talk to each other directly — everything goes through the Bach store</div>',
+        unsafe_allow_html=True,
     )
 
-    st.divider()
+    with st.container(border=True):
+        coordination_figure = ASSETS / "bach4popper-finals.png"
 
-    # ---------------------------------------------------------------
-    # Experimental capabilities
-    # ---------------------------------------------------------------
+        figure_left, figure_center, figure_right = st.columns([1, 3, 1])
 
-    st.markdown('<div class="section-title">Experimental capabilities</div>', unsafe_allow_html=True)
-
-    render_metric_grid(
-        [
-            ("Partitioning", "IID / Non-IID"),
-            ("Number of clients", "Configurable"),
-            ("Datasets", "Multiple"),
-            ("Output", "Logic program"),
-        ]
-    )
+        with figure_center:
+            if coordination_figure.is_file():
+                st.image(
+                    str(coordination_figure),
+                    caption="Bach4Popper architecture (Akaichi et al., 2026)",
+                    use_container_width=True,
+                )
+            else:
+                st.warning(
+                    f"Coordination figure not found.\n\nExpected path: `{coordination_figure}`"
+                )
 
     st.caption(
-        "Execution time, number of programs, number of rounds, final score "
-        "and client-level metrics are loaded live from the FILP experiment "
-        "database on the Experiments page."
+        "The server never contacts a client directly, and clients never "
+        "contact each other. The server tells each candidate hypothesis H "
+        "into the store and gets the outcomes back; every client asks the "
+        "store for H, tests it against its own local data (D1…Dn), and "
+        "tells its outcome back into the store."
     )
 
     st.divider()
 
     # ---------------------------------------------------------------
-    # Implementation
+    # Why coordination
     # ---------------------------------------------------------------
 
-    st.markdown('<div class="section-title">Implementation</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Why coordination, not just collaboration?</div>', unsafe_allow_html=True)
+    st.write(
+        "Learning by Collaboration relies on a central server directly "
+        "orchestrating each round: it sends a hypothesis, waits for every "
+        "client to answer, then moves on. Learning by Coordination "
+        "reformulates this exchange through a shared coordination space: "
+        "participants publish and retrieve information asynchronously via "
+        "the store, which decouples when something is produced from when "
+        "it is consumed — a pattern suited to distributed, "
+        "loosely-synchronized settings."
+    )
 
-    implementation_1, implementation_2, implementation_3 = st.columns(3)
+    st.divider()
 
-    with implementation_1:
-        render_info_card("Learning engine", "Popper generates hypotheses and constraints.")
-    with implementation_2:
-        render_info_card("Federated infrastructure", "Flower handles communication between the server and clients.")
-    with implementation_3:
-        render_info_card("Experiment platform", "The FILP launcher manages partitions, processes, artifacts and database persistence.")
+    # ---------------------------------------------------------------
+    # How Bach coordinates the search
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">How Bach coordinates the search</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-caption">Bach is a Linda-style dialect: a shared, associative store that processes read from and write to using four primitives</div>',
+        unsafe_allow_html=True,
+    )
+
+    primitive_1, primitive_2, primitive_3, primitive_4 = st.columns(4)
+    with primitive_1:
+        render_info_card("tell(t)", "Writes tuple t to the shared store. Always succeeds.")
+    with primitive_2:
+        render_info_card("get(t)", "Reads and removes t from the store — requires t to be present.")
+    with primitive_3:
+        render_info_card("ask(t)", "Tests whether t is present, without removing it.")
+    with primitive_4:
+        render_info_card("nask(t)", "Tests whether t is absent from the store.")
+
+    st.caption(
+        "Bach was developed at the Nadi Research Institute (Darquennes, "
+        "Jacquet & Linden). Bach4Popper uses it as the coordination layer "
+        "between the Popper search and the distributed clients."
+    )
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # What the paper shows
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">What the paper shows</div>', unsafe_allow_html=True)
+
+    result_1, result_2 = st.columns(2)
+    with result_1:
+        render_info_card(
+            "Correctness",
+            "Bach4Popper is shown, both theoretically and empirically, to be "
+            "correct with respect to the corresponding centralized version "
+            "of Popper.",
+        )
+    with result_2:
+        render_info_card(
+            "Performance",
+            "Experimental results show that computational performance is "
+            "preserved when moving from a centralized to a federated "
+            "setting.",
+        )
 
     st.divider()
 
@@ -635,20 +602,24 @@ with collaboration_tab:
             "**Akaichi, Y., Barkallah, M., Jacquet, J.-M., Linden, I., & Vanhoof, W. (2026).** "
             "[*Bach4Popper: Towards Federated Inductive Logic Programming Using Coordination.*]"
             "(https://link.springer.com/chapter/10.1007/978-3-032-28358-0_7) "
-            "In *International Conference on Coordination Models and Languages* (pp. 136–156). Springer, Cham."
+            "In *International Conference on Coordination Models and Languages* "
+            "(COORDINATION 2026), LNCS vol. 16590, pp. 136–156. Springer, Cham."
+        )
+        st.caption(
+            "Code: Akaichi, Y., Jacquet, J.-M. The Bach4Popper Framework. "
+            "https://doi.org/10.5281/zenodo.18981901"
         )
 
+    st.divider()
 
-# ===================================================================
-# LEARNING BY COORDINATION
-# ===================================================================
-
-with coordination_tab:
-    render_coming_soon(
-        "Learning by Coordination",
-        "This section will present Bach4Popper, the coordination-space "
-        "architecture, the Bach store, the distributed protocol and the "
-        "associated experimental results.",
+    st.markdown(
+        render_badge("Not yet runnable in this platform", "neutral"),
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "The method above is published and proven — integrating it as a "
+        "runnable engine in FILP, alongside Learning by Collaboration, is "
+        "next on the roadmap."
     )
 
 

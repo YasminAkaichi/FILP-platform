@@ -45,7 +45,7 @@ LINKEDIN_URL = "https://www.linkedin.com/in/yasmine-akaichi-761975197/"
 EMAIL_ADDRESS = "yasmineakaichi02@gmail.com"
 
 # TODO: update once the framework repository is public.
-GITHUB_URL = "https://github.com/your-username/filp-framework"
+GITHUB_URL = "https://github.com/YasminAkaichi/FILP-platform.git"
 
 # Drop a square photo at this path (e.g. via the assets/ folder). A
 # placeholder avatar with your initials is shown until the file exists.

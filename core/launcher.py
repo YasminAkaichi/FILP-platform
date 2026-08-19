@@ -31,6 +31,12 @@ class ExperimentLauncher:
                     experiment_id=experiment_id,
                     repository=repository,
                 )
+            elif config.approach == "coordination":
+                self._run_coordination(
+                    config=config,
+                    experiment_id=experiment_id,
+                    repository=repository,
+                )
             else:
                 raise NotImplementedError(
                     f"The approach '{config.approach}' is not implemented yet."
@@ -439,6 +445,278 @@ class ExperimentLauncher:
             self._stop_processes(processes)
 
 
+    def _run_coordination(
+    self,
+    config: ExperimentConfig,
+    experiment_id: int,
+    repository: ExperimentRepository,) -> None:
+
+        server_dataset = (
+            DATASETS_DIR
+            / config.dataset
+        )
+
+        if not server_dataset.is_dir():
+            raise FileNotFoundError(
+                f"Server dataset not found: {server_dataset}"
+            )
+
+        # Same partitioning pipeline as Collaboration
+        client_datasets = (
+            self._prepare_client_datasets(
+                config
+            )
+        )
+
+        experiment_directory = (
+            PROJECT_ROOT
+            / "artifacts"
+            / f"experiment_{experiment_id}"
+        )
+
+        experiment_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        print(
+            "\n========== STARTING COORDINATION EXPERIMENT =========="
+        )
+
+        print(
+            f"Approach          : {config.approach}"
+        )
+        print(
+            f"Dataset           : {config.dataset}"
+        )
+        print(
+            f"Clients           : {config.number_of_clients}"
+        )
+        print(
+            f"Partition strategy: {config.partition_strategy}"
+        )
+        print(
+            f"Rounds            : {config.rounds}"
+        )
+
+        print(
+            "======================================================\n"
+        )
+
+        processes: list[subprocess.Popen] = []
+        client_processes: list[subprocess.Popen] = []
+
+        # --------------------------------------------------
+        # Bach store
+        # --------------------------------------------------
+
+        bach_directory = (
+            PROJECT_ROOT
+            / "coordination"
+            / "bach"
+        )
+
+        bbpopper_path = (
+            bach_directory
+            / "bbpopper.py"
+        )
+
+        if not bbpopper_path.is_file():
+            raise FileNotFoundError(
+                f"Bach store launcher not found: "
+                f"{bbpopper_path}"
+            )
+
+        try:
+
+            # --------------------------------------------------
+            # 1. Start Bach store
+            # --------------------------------------------------
+
+            print(
+                "[Launcher] Starting Bach coordination store..."
+            )
+
+            store_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "bbpopper.py",
+                ],
+                cwd=bach_directory,
+            )
+
+            processes.append(
+                store_process
+            )
+
+            time.sleep(1)
+
+            if store_process.poll() is not None:
+                raise RuntimeError(
+                    "The Bach coordination store "
+                    "stopped during startup."
+                )
+
+            # --------------------------------------------------
+            # 2. Start Coordination server
+            # --------------------------------------------------
+
+            print(
+                "[Launcher] Starting Bach4Popper server..."
+            )
+
+            server_command = [
+                sys.executable,
+                "-m",
+                "engines.coordination.srvpopper",
+
+                "--dataset",
+                str(server_dataset),
+
+                "--clients",
+                str(config.number_of_clients),
+
+                "--rounds",
+                str(config.rounds),
+
+                "--store-address",
+                "127.0.0.1:8000",
+            ]
+
+            server_process = subprocess.Popen(
+                server_command,
+                cwd=PROJECT_ROOT,
+            )
+
+            processes.append(
+                server_process
+            )
+
+            time.sleep(1)
+
+            if server_process.poll() is not None:
+                raise RuntimeError(
+                    "The Coordination server "
+                    "stopped during startup."
+                )
+
+            # --------------------------------------------------
+            # 3. Start clients
+            # --------------------------------------------------
+
+            for client_id, client_dataset in enumerate(
+                client_datasets,
+                start=1,
+            ):
+
+                client_command = [
+                    sys.executable,
+                    "-m",
+                    "engines.coordination.clipopper",
+
+                    "--client-id",
+                    str(client_id),
+
+                    "--dataset",
+                    str(client_dataset),
+
+                    "--store-address",
+                    "127.0.0.1:8000",
+                ]
+
+                print(
+                    f"[Launcher] Starting Coordination client "
+                    f"{client_id} with dataset "
+                    f"{client_dataset.name}..."
+                )
+
+                client_process = subprocess.Popen(
+                    client_command,
+                    cwd=PROJECT_ROOT,
+                )
+
+                processes.append(
+                    client_process
+                )
+
+                client_processes.append(
+                    client_process
+                )
+
+            # --------------------------------------------------
+            # 4. Wait for server
+            # --------------------------------------------------
+
+            server_return_code = (
+                server_process.wait()
+            )
+
+            if server_return_code != 0:
+                raise RuntimeError(
+                    "The Coordination server exited "
+                    f"with code {server_return_code}."
+                )
+
+            print(
+                "[Launcher] Coordination server completed."
+            )
+
+            # --------------------------------------------------
+            # 5. Clients
+            #
+            # We already know some Bach clients can remain
+            # waiting after the final hypothesis.
+            # Do NOT fail the whole experiment for that.
+            # --------------------------------------------------
+
+            for client_id, client_process in enumerate(
+                client_processes,
+                start=1,
+            ):
+
+                try:
+                    client_process.wait(
+                        timeout=3
+                    )
+
+                except subprocess.TimeoutExpired:
+
+                    print(
+                        f"[Launcher] Client {client_id} "
+                        "is still waiting after server completion. "
+                        "Stopping it cleanly."
+                    )
+
+                    client_process.terminate()
+
+                    try:
+                        client_process.wait(
+                            timeout=2
+                        )
+
+                    except subprocess.TimeoutExpired:
+                        client_process.kill()
+                        client_process.wait()
+
+            print(
+                "\n[Launcher] Coordination experiment "
+                "completed successfully."
+            )
+
+        except KeyboardInterrupt:
+
+            print(
+                "\n[Launcher] Coordination experiment "
+                "interrupted by the user."
+            )
+
+            raise
+
+        finally:
+
+            self._stop_processes(
+                processes
+            )
     def _get_client_datasets_old(
         self,
         config: ExperimentConfig,
@@ -461,6 +739,9 @@ class ExperimentLauncher:
 
         return client_datasets
     
+
+
+
     def _prepare_client_datasets(
     self,
     config: ExperimentConfig,
