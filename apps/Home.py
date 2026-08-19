@@ -42,6 +42,7 @@ RESEARCHER_BIO = (
 )
 
 LINKEDIN_URL = "https://www.linkedin.com/in/yasmine-akaichi-761975197/"
+EMAIL_ADDRESS = "yasmineakaichi02@gmail.com"
 
 # TODO: update once the framework repository is public.
 GITHUB_URL = "https://github.com/your-username/filp-framework"
@@ -61,7 +62,7 @@ LOGO_PATH = PROJECT_ROOT / "assets" / "filp_logo.svg"
 
 st.set_page_config(
     page_title="FILP Platform — Yasmine Akaichi",
-    page_icon="🧠",
+    page_icon="",
     layout="wide",
 )
 
@@ -233,6 +234,20 @@ def inject_style() -> None:
             font-weight: 600;
         }}
 
+        .contact-pill {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 10px;
+            color: white !important;
+            font-size: 0.88rem;
+            font-weight: 600;
+            text-decoration: none !important;
+            margin: 0 8px 8px 0;
+        }}
+        .contact-pill:hover {{ opacity: 0.9; }}
+
         @media (max-width: 900px) {{
             .filp-flow {{ flex-direction: column; }}
             .flow-arrow {{ transform: rotate(90deg); }}
@@ -256,6 +271,32 @@ def render_badge(text: str, kind: str = "success") -> str:
         else (PALETTE["neutral"], PALETTE["neutral_soft"])
     )
     return f'<span class="badge" style="color:{color};background:{bg};">{text}</span>'
+
+
+# Small brand-accurate icons (inline SVG, no external file needed) used
+# by the contact pills below.
+ICON_LINKEDIN = (
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">'
+    '<path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.04-1.85-3.04-1.86 0-2.15 1.45-2.15 2.94v5.67H9.35V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.59 0 4.25 2.37 4.25 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z"/>'
+    "</svg>"
+)
+ICON_EMAIL = (
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">'
+    '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'
+    "</svg>"
+)
+ICON_GITHUB = (
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">'
+    '<path d="M12 2C6.48 2 2 6.58 2 12.19c0 4.49 2.87 8.3 6.84 9.65.5.1.68-.22.68-.49v-1.9c-2.78.62-3.37-1.19-3.37-1.19-.46-1.2-1.11-1.51-1.11-1.51-.91-.64.07-.63.07-.63 1 .07 1.53 1.05 1.53 1.05.9 1.57 2.34 1.12 2.91.86.09-.66.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.73 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.47.1 2.73.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.19C22 6.58 17.52 2 12 2z"/>'
+    "</svg>"
+)
+
+
+def render_contact_pill(icon_svg: str, label: str, href: str, bg: str) -> str:
+    return (
+        f'<a href="{href}" target="_blank" rel="noopener" class="contact-pill" '
+        f'style="background:{bg};">{icon_svg}<span>{label}</span></a>'
+    )
 
 
 # ---------------------------------------------------------------------
@@ -286,11 +327,10 @@ st.markdown(
 cta_left, cta_mid, cta_right = st.columns(3)
 
 with cta_left:
-    st.page_link("pages/3_Experiments.py", label="Run an experiment", icon="🧪", use_container_width=True)
+    st.page_link("pages/3_Experiments.py", label="Run an experiment", use_container_width=True)
 with cta_mid:
     st.page_link("pages/2_Datasets.py", label="Explore the datasets", icon="📚", use_container_width=True)
-with cta_right:
-    st.link_button("Connect on LinkedIn", LINKEDIN_URL, use_container_width=True)
+
 
 st.write("")
 st.divider()
@@ -458,11 +498,12 @@ with bio_column:
     render_chips([RESEARCHER_LOCATION, *RESEARCHER_INSTITUTIONS], variant="neutral")
     st.write(RESEARCHER_BIO)
 
-    link_col_1, link_col_2, _spacer = st.columns([1, 1, 2])
-    with link_col_1:
-        st.link_button("🔗 LinkedIn", LINKEDIN_URL, use_container_width=True)
-    with link_col_2:
-        st.link_button("💻 GitHub", GITHUB_URL, use_container_width=True)
+    st.markdown(
+        render_contact_pill(ICON_LINKEDIN, "LinkedIn", LINKEDIN_URL, "#0A66C2")
+        + render_contact_pill(ICON_EMAIL, "Email", f"mailto:{EMAIL_ADDRESS}", PALETTE["primary"])
+        + render_contact_pill(ICON_GITHUB, "GitHub", GITHUB_URL, "#1F2430"),
+        unsafe_allow_html=True,
+    )
 
 st.write("")
 st.caption(f"© {RESEARCHER_NAME} · FILP Platform")

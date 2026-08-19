@@ -5,3 +5,4 @@ pyswip
 setuptools<81
 streamlit
 pandas
+parsimonious

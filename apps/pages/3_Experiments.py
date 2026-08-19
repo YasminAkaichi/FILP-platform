@@ -630,7 +630,7 @@ else:
 
 inject_style()
 
-st.title("🧪 Experiments")
+st.title("Experiments")
 st.caption(
     "Configure and launch Learning by Collaboration runs, "
     "then explore the aggregated and per-run results."
