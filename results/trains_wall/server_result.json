@@ -1,0 +1,13 @@
+{
+  "solution": "f(A):-has_car(A,C),has_car(A,B),three_wheels(B),long(C),two_wheels(C)",
+  "solution_found": true,
+  "total_time": 7.5844480830128305,
+  "startup_time": 4.046975541015854,
+  "learning_time": 2.3241649999981746,
+  "popper_time": 0.052143374778097495,
+  "federation_time": 6.280725120013813,
+  "federation_ratio": 0.8281057568422131,
+  "number_of_rounds": 53,
+  "number_of_programs": 53,
+  "final_score": 10.0
+}

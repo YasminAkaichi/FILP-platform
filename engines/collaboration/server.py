@@ -59,6 +59,16 @@ def parse_arguments() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+    "--timing-mode",
+    type=str,
+    choices=["wall", "cpu"],
+    default="wall",
+    help=(
+        "Timing mode: 'wall' uses perf_counter(), "
+        "'cpu' uses process_time()."
+    ),
+    )
+    parser.add_argument(
     "--output-dir",
     type=str,
     required=True,
@@ -286,6 +296,7 @@ def main() -> None:
         min_available_clients=args.clients,
         min_evaluate_clients=args.clients,
         fit_metrics_aggregation_fn=None,
+        with_suspension=(args.timing_mode == "wall"),
     )
 
     log(

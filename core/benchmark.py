@@ -10,11 +10,12 @@ class BenchmarkConfig:
     dataset: str
     number_of_clients: int
     partition_strategy: PartitionStrategy
-
     number_of_runs: int = 6
     base_seed: int = 42
     learner: str = "popper"
     rounds: int = 35000
+    timeout: int = 600
+    timing_mode: str = "wall"
     server_address: str = "localhost:8080"
 
     def validate(self) -> None:
@@ -43,7 +44,17 @@ class BenchmarkConfig:
                 "The number of rounds must be at least 1."
             )
 
+        if self.timeout < 1:
+            raise ValueError(
+                "The learner timeout must be at least 1 second."
+            )
+
+        if self.timing_mode not in {"wall", "cpu"}:
+            raise ValueError(
+                "Timing mode must be either 'wall' or 'cpu'."
+            )
         if not self.server_address.strip():
             raise ValueError(
                 "A server address must be specified."
             )
+        

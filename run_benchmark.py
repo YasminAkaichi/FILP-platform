@@ -3,14 +3,15 @@ from core.benchmark_launcher import BenchmarkLauncher
 
 
 config = BenchmarkConfig(
-    name="zendo1_k2_run_10",
+    name="zendo_k2_run_wall",
     approach="collaboration",
-    dataset="trains2",
+    dataset="zendo",
     number_of_clients=2,
     partition_strategy="iid",
-    number_of_runs=1,
+    number_of_runs=6,
     base_seed=42,
     rounds=35000,
+    timing_mode="cpu",
     server_address="localhost:8080",
 )
 

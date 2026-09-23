@@ -32,7 +32,7 @@ def load_benchmark_metadata(benchmark_id: int) -> dict:
     return dict(row)
 
 
-benchmark_id = 28
+benchmark_id = 57
 
 metadata = load_benchmark_metadata(benchmark_id)
 summary = load_benchmark_summary(benchmark_id)

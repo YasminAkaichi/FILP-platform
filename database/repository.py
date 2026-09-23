@@ -2,8 +2,9 @@ from datetime import datetime
 
 from database.connection import get_connection
 from core.experiment import ExperimentConfig
-from core.results import ClientResult, ServerResult
+from core.results import ClientResult, ServerResult, ConsensusResult
 from core.benchmark import BenchmarkConfig
+import json 
 
 class ExperimentRepository:
 
@@ -179,6 +180,54 @@ class ExperimentRepository:
             )
 
             conn.commit()
+    
+    def save_consensus_result(
+        self,
+        experiment_id: int,
+        result: ConsensusResult,
+    ) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO consensus_results (
+                    experiment_id,
+                    learner,
+                    number_of_clients,
+                    number_of_hypotheses,
+                    hypotheses,
+                    tp,
+                    fn,
+                    tn,
+                    fp,
+                    accuracy,
+                    precision,
+                    recall,
+                    f1
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    experiment_id,
+                    result.learner,
+                    result.number_of_clients,
+                    result.number_of_hypotheses,
+                    json.dumps(
+                        result.hypotheses,
+                        ensure_ascii=False,
+                    ),
+                    result.tp,
+                    result.fn,
+                    result.tn,
+                    result.fp,
+                    result.accuracy,
+                    result.precision,
+                    result.recall,
+                    result.f1,
+                ),
+            )
+
+            conn.commit()
+    
     def fail_experiment(
         self,
         experiment_id: int,

@@ -1,11 +1,12 @@
 from __future__ import annotations
-
+import json
 import sys
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
+
 
 # ---------------------------------------------------------------------
 # Project imports
@@ -19,7 +20,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.benchmark import BenchmarkConfig
 from core.benchmark_launcher import BenchmarkLauncher
-from core.benchmark_results import load_benchmark_summary
+from core.benchmark_results import (
+    load_benchmark_summary,
+    load_consensus_benchmark_summary,
+    load_consensus_benchmark_runs,
+)
 from database.connection import get_connection
 
 
@@ -197,6 +202,17 @@ def render_badge(status: str | None) -> str:
     )
 
 
+def render_vote_badge(is_positive: bool) -> str:
+    color = PALETTE["success"] if is_positive else PALETTE["error"]
+    bg = PALETTE["success_soft"] if is_positive else PALETTE["error_soft"]
+    label = "Positive" if is_positive else "Negative"
+    dot = "✓" if is_positive else "✕"
+    return (
+        f'<span class="badge" style="color:{color};background:{bg};">'
+        f"{dot} {label}</span>"
+    )
+
+
 def render_metric_grid(items: list[dict]) -> None:
     """items: list of {label, value, sub (optional)}"""
 
@@ -279,6 +295,7 @@ def load_benchmark_metadata(benchmark_id: int) -> dict:
                 partition_strategy,
                 number_of_runs,
                 base_seed,
+                learner,
                 rounds,
                 status
             FROM benchmarks
@@ -450,8 +467,10 @@ def launch_benchmark(
     partition_strategy: str,
     number_of_runs: int,
     base_seed: int,
-    rounds: int,
     benchmark_name: str,
+    rounds: int = 35000,
+    learner: str = "popper",
+    timeout: int = 600,
 ) -> None:
     config = BenchmarkConfig(
         name=benchmark_name.strip(),
@@ -461,20 +480,25 @@ def launch_benchmark(
         partition_strategy=partition_strategy,
         number_of_runs=int(number_of_runs),
         base_seed=int(base_seed),
+        learner=learner,
         rounds=int(rounds),
+        timeout=int(timeout),
         server_address="localhost:8080",
     )
 
     try:
         with st.status("Running benchmark…", expanded=True) as status:
-            render_chips(
-                [
-                    ("Dataset", dataset),
-                    ("Clients", str(number_of_clients)),
-                    ("Partition", partition_strategy),
-                    ("Runs", str(number_of_runs)),
-                ]
-            )
+            chips = [
+                ("Dataset", dataset),
+                ("Clients", str(number_of_clients)),
+                ("Partition", partition_strategy),
+                ("Runs", str(number_of_runs)),
+            ]
+            if approach == "consensus":
+                chips.append(("Learner", learner.title()))
+            else:
+                chips.append(("Max rounds", str(rounds)))
+            render_chips(chips)
 
             launcher = BenchmarkLauncher()
             benchmark_id = launcher.run(config)
@@ -497,10 +521,12 @@ def launch_benchmark(
 
 def render_how_it_works() -> None:
     st.markdown(
-        "A logical dataset is split across several **clients**. Each client keeps "
-        "its share of examples private and only exchanges symbolic feedback about "
-        "candidate hypotheses with a coordinating server, until the group converges "
-        "on a single Prolog program that explains everyone's data."
+        "A logical dataset is split across several **clients**. In "
+        "Collaboration and Coordination, clients keep their examples private "
+        "and only exchange symbolic feedback with a server until the group "
+        "converges on one shared program. In Consensus, each client learns "
+        "its own local program independently, and the final label is decided "
+        "by majority vote."
     )
 
     st.write("")
@@ -512,8 +538,8 @@ def render_how_it_works() -> None:
             st.markdown("**📚 Dataset**")
             st.caption(
                 "The logical data (positive / negative examples + background "
-                "knowledge) the clients will collaboratively learn from. Each "
-                "dataset hides its own target rule to discover."
+                "knowledge) the clients will learn from. Each dataset hides "
+                "its own target rule to discover."
             )
         with st.container(border=True):
             st.markdown("**🔀 Partition strategy**")
@@ -527,23 +553,24 @@ def render_how_it_works() -> None:
         with st.container(border=True):
             st.markdown("**👥 Number of clients**")
             st.caption(
-                "How many participants hold a partition of the dataset and "
-                "collaborate. More clients means more parallelism, but also "
-                "more coordination between them."
+                "How many participants hold a partition of the dataset. More "
+                "clients means more parallelism, but also more coordination "
+                "between them (or, in Consensus, more votes)."
             )
         with st.container(border=True):
-            st.markdown("**🔁 Runs, seed & rounds**")
+            st.markdown("**🔁 Runs & seed**")
             st.caption(
                 "Runs repeat the experiment with different seeds to measure "
-                "robustness (mean ± std). Rounds cap how long the federated "
-                "protocol is allowed to search before stopping."
+                "robustness (mean ± std). Collaboration and Coordination also "
+                "cap the number of federated rounds; Consensus caps how long "
+                "each client's local learner is allowed to run instead."
             )
 
 
 APPROACH_OPTIONS = {
     "collaboration": {"label": "Learning by Collaboration", "available": True},
-    "coordination": {"label": "Learning by Coordination", "available": False},
-    "consensus": {"label": "Learning by Consensus", "available": False},
+    "coordination": {"label": "Learning by Coordination", "available": True},
+    "consensus": {"label": "Learning by Consensus", "available": True},
 }
 
 
@@ -560,7 +587,12 @@ def render_new_benchmark_form() -> None:
             f"{APPROACH_OPTIONS[key]['label']}"
             + ("" if APPROACH_OPTIONS[key]["available"] else " — coming soon")
         ),
-        help="Only Learning by Collaboration is implemented today. Coordination and Consensus are on the roadmap.",
+        help=(
+            "Collaboration and Coordination federate a single search across "
+            "the clients. Consensus lets each client learn on its own and "
+            "combines the results by majority vote — its setup is a bit "
+            "different."
+        ),
     )
 
     if not APPROACH_OPTIONS[approach]["available"]:
@@ -571,6 +603,8 @@ def render_new_benchmark_form() -> None:
         )
         st.page_link("pages/1_Approaches.py", label="View the research roadmap")
         return
+
+    is_consensus = approach == "consensus"
 
     with st.form("benchmark_form"):
         column_1, column_2 = st.columns(2)
@@ -586,7 +620,12 @@ def render_new_benchmark_form() -> None:
                 "Number of clients",
                 options=[2, 3, 10],
                 index=1,
-                help="How many participants hold a partition of the dataset and collaborate.",
+                help=(
+                    "How many participants hold a partition of the dataset "
+                    "and vote on the final label."
+                    if is_consensus
+                    else "How many participants hold a partition of the dataset and collaborate."
+                ),
             )
             partition_strategy = st.selectbox(
                 "Partition strategy",
@@ -611,24 +650,52 @@ def render_new_benchmark_form() -> None:
                 step=1,
                 help="Starting random seed. Each run uses base_seed + run index, so results stay reproducible.",
             )
-            rounds = st.number_input(
-                "Maximum rounds",
-                min_value=1,
-                value=35000,
-                step=100,
-                help="Safety cap on federated learning rounds before the run stops.",
-            )
+
+            if is_consensus:
+                learner = st.selectbox(
+                    "Local learner",
+                    options=["popper", "andante"],
+                    format_func=lambda key: "Popper" if key == "popper" else "Andante",
+                    help="The ILP engine each client uses to learn its own local hypothesis.",
+                )
+                timeout = st.number_input(
+                    "Local learner timeout (seconds)",
+                    min_value=10,
+                    value=600,
+                    step=30,
+                    help="Safety cap on how long each client's local learner is allowed to run before it stops.",
+                )
+                rounds = 35000  # unused for Consensus, kept as a harmless default
+            else:
+                learner = "popper"
+                timeout = 600  # unused for Collaboration / Coordination
+                rounds = st.number_input(
+                    "Maximum rounds",
+                    min_value=1,
+                    value=35000,
+                    step=100,
+                    help="Safety cap on federated learning rounds before the run stops.",
+                )
 
         default_name = f"{dataset}_{approach}_k{number_of_clients}_{partition_strategy}"
         benchmark_name = st.text_input("Benchmark name", value=default_name)
 
-        st.markdown(
-            '<div class="section-caption">You are about to run '
-            f"<b>{number_of_runs}</b> run(s) on <b>{dataset}</b>, split "
-            f"<b>{partition_strategy.upper()}</b> across <b>{number_of_clients}</b> "
-            "clients.</div>",
-            unsafe_allow_html=True,
-        )
+        if is_consensus:
+            recap = (
+                '<div class="section-caption">You are about to run '
+                f"<b>{number_of_runs}</b> run(s) on <b>{dataset}</b>, split "
+                f"<b>{partition_strategy.upper()}</b> across <b>{number_of_clients}</b> "
+                f"clients, each learning locally with <b>{learner.title()}</b>.</div>"
+            )
+        else:
+            recap = (
+                '<div class="section-caption">You are about to run '
+                f"<b>{number_of_runs}</b> run(s) on <b>{dataset}</b>, split "
+                f"<b>{partition_strategy.upper()}</b> across <b>{number_of_clients}</b> "
+                "clients.</div>"
+            )
+
+        st.markdown(recap, unsafe_allow_html=True)
 
         submitted = st.form_submit_button(
             "🚀 Run benchmark", type="primary", use_container_width=True
@@ -643,6 +710,8 @@ def render_new_benchmark_form() -> None:
             number_of_runs=number_of_runs,
             base_seed=base_seed,
             rounds=rounds,
+            learner=learner,
+            timeout=timeout,
             benchmark_name=benchmark_name,
         )
 
@@ -741,9 +810,26 @@ with st.sidebar:
 # --- Main area: results for the selected benchmark ------------------------
 
 metadata = load_benchmark_metadata(selected_benchmark_id)
-summary = load_benchmark_summary(selected_benchmark_id)
-runs = load_benchmark_runs(selected_benchmark_id)
-client_results = load_client_results(selected_benchmark_id)
+
+if metadata["approach"] == "consensus":
+    summary = load_consensus_benchmark_summary(
+        selected_benchmark_id
+    )
+    runs = load_consensus_benchmark_runs(
+        selected_benchmark_id
+    )
+    client_results = []
+else:
+    summary = load_benchmark_summary(
+        selected_benchmark_id
+    )
+    runs = load_benchmark_runs(
+        selected_benchmark_id
+    )
+    client_results = load_client_results(
+        selected_benchmark_id
+    )
+
 
 header_left, header_right = st.columns([5, 1])
 
@@ -752,15 +838,16 @@ with header_left:
         f'<div class="section-title" style="font-size:1.3rem;">{metadata["name"]}</div>',
         unsafe_allow_html=True,
     )
-    render_chips(
-        [
-            ("Dataset", metadata["dataset"]),
-            ("Clients", str(metadata["number_of_clients"])),
-            ("Partition", metadata["partition_strategy"]),
-            ("Runs", str(metadata["number_of_runs"])),
-            ("Seed", str(metadata["base_seed"])),
-        ]
-    )
+    header_chips = [
+        ("Dataset", metadata["dataset"]),
+        ("Clients", str(metadata["number_of_clients"])),
+        ("Partition", metadata["partition_strategy"]),
+        ("Runs", str(metadata["number_of_runs"])),
+        ("Seed", str(metadata["base_seed"])),
+    ]
+    if metadata["approach"] == "consensus":
+        header_chips.append(("Learner", str(metadata.get("learner") or "popper").title()))
+    render_chips(header_chips)
 
 with header_right:
     st.markdown(
@@ -770,132 +857,489 @@ with header_right:
 
 st.write("")
 
-tab_overview, tab_runs, tab_hypotheses, tab_clients, tab_dataset = st.tabs(
-    ["📈 Overview", "Runs", "Hypotheses", "Clients", "🔍 Dataset explorer"]
+(
+    tab_overview,
+    tab_runs,
+    tab_hypotheses,
+    tab_clients,
+    tab_dataset,
+) = st.tabs(
+    [
+        "📈 Overview",
+        "Runs",
+        "Hypotheses & predictions",
+        "Clients",
+        "🔍 Dataset explorer",
+    ]
 )
-
 # --- Overview tab ----------------------------------------------------------
 
 with tab_overview:
-    with st.container(border=True):
-        st.markdown('<div class="section-title">Timing</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="section-caption">Mean ± standard deviation across all runs</div>',
-            unsafe_allow_html=True,
-        )
-        render_metric_grid(
-            [
-                {
-                    "label": "Learning time",
-                    "value": f"{fmt(summary.learning_time.mean)} s",
-                    "sub": f"± {fmt(summary.learning_time.std)} s",
-                },
-                {
-                    "label": "Startup time",
-                    "value": f"{fmt(summary.startup_time.mean)} s",
-                    "sub": f"± {fmt(summary.startup_time.std)} s",
-                },
-                {
-                    "label": "End-to-end time",
-                    "value": f"{fmt(summary.total_time.mean)} s",
-                    "sub": f"± {fmt(summary.total_time.std)} s",
-                },
-                {
-                    "label": "Popper core",
-                    "value": f"{fmt(summary.popper_time.mean)} s",
-                    "sub": f"± {fmt(summary.popper_time.std)} s",
-                },
-            ]
-        )
+    if metadata["approach"] == "consensus":
+        with st.container(border=True):
+            st.markdown(
+                '<div class="section-title">Consensus performance</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div class="section-caption">'
+                'Global majority-vote performance on the shared test set'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
-    with st.container(border=True):
-        st.markdown('<div class="section-title">Learning outcome</div>', unsafe_allow_html=True)
-        render_metric_grid(
-            [
-                {
-                    "label": "Rounds",
-                    "value": fmt(summary.number_of_rounds.mean, 1),
-                    "sub": f"± {fmt(summary.number_of_rounds.std, 1)}",
-                },
-                {
-                    "label": "Programs explored",
-                    "value": fmt(summary.number_of_programs.mean, 1),
-                    "sub": f"± {fmt(summary.number_of_programs.std, 1)}",
-                },
-                {
-                    "label": "Final score",
-                    "value": fmt(summary.final_score.mean, 2),
-                    "sub": f"± {fmt(summary.final_score.std, 2)}",
-                },
-            ]
-        )
+            render_metric_grid(
+                [
+                    {
+                        "label": "Accuracy",
+                        "value": fmt(summary.accuracy.mean),
+                        "sub": f"± {fmt(summary.accuracy.std)}",
+                    },
+                    {
+                        "label": "Precision",
+                        "value": fmt(summary.precision.mean),
+                        "sub": f"± {fmt(summary.precision.std)}",
+                    },
+                    {
+                        "label": "Recall",
+                        "value": fmt(summary.recall.mean),
+                        "sub": f"± {fmt(summary.recall.std)}",
+                    },
+                    {
+                        "label": "F1",
+                        "value": fmt(summary.f1.mean),
+                        "sub": f"± {fmt(summary.f1.std)}",
+                    },
+                ]
+            )
 
+        with st.container(border=True):
+            st.markdown(
+                '<div class="section-title">Prediction outcome</div>',
+                unsafe_allow_html=True,
+            )
+
+            render_metric_grid(
+                [
+                    {
+                        "label": "True positives",
+                        "value": fmt(summary.tp.mean, 1),
+                    },
+                    {
+                        "label": "True negatives",
+                        "value": fmt(summary.tn.mean, 1),
+                    },
+                    {
+                        "label": "False positives",
+                        "value": fmt(summary.fp.mean, 1),
+                    },
+                    {
+                        "label": "False negatives",
+                        "value": fmt(summary.fn.mean, 1),
+                    },
+                    {
+                        "label": "Hypotheses",
+                        "value": fmt(
+                            summary.number_of_hypotheses.mean,
+                            1,
+                        ),
+                    },
+                ]
+            )
+
+    else:
+        with st.container(border=True):
+            st.markdown(
+                '<div class="section-title">Timing</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div class="section-caption">'
+                'Mean ± standard deviation across all runs'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+            render_metric_grid(
+                [
+                    {
+                        "label": "Learning time",
+                        "value": f"{fmt(summary.learning_time.mean)} s",
+                        "sub": f"± {fmt(summary.learning_time.std)} s",
+                    },
+                    {
+                        "label": "Startup time",
+                        "value": f"{fmt(summary.startup_time.mean)} s",
+                        "sub": f"± {fmt(summary.startup_time.std)} s",
+                    },
+                    {
+                        "label": "End-to-end time",
+                        "value": f"{fmt(summary.total_time.mean)} s",
+                        "sub": f"± {fmt(summary.total_time.std)} s",
+                    },
+                    {
+                        "label": "Popper core",
+                        "value": f"{fmt(summary.popper_time.mean)} s",
+                        "sub": f"± {fmt(summary.popper_time.std)} s",
+                    },
+                ]
+            )
+
+        with st.container(border=True):
+            st.markdown(
+                '<div class="section-title">Learning outcome</div>',
+                unsafe_allow_html=True,
+            )
+
+            render_metric_grid(
+                [
+                    {
+                        "label": "Rounds",
+                        "value": fmt(
+                            summary.number_of_rounds.mean,
+                            1,
+                        ),
+                        "sub": (
+                            f"± {fmt(summary.number_of_rounds.std, 1)}"
+                        ),
+                    },
+                    {
+                        "label": "Programs explored",
+                        "value": fmt(
+                            summary.number_of_programs.mean,
+                            1,
+                        ),
+                        "sub": (
+                            f"± {fmt(summary.number_of_programs.std, 1)}"
+                        ),
+                    },
+                    {
+                        "label": "Final score",
+                        "value": fmt(
+                            summary.final_score.mean,
+                            2,
+                        ),
+                        "sub": (
+                            f"± {fmt(summary.final_score.std, 2)}"
+                        ),
+                    },
+                ]
+            )
 # --- Runs tab ----------------------------------------------------------
 
 with tab_runs:
-    st.markdown('<div class="section-title">Individual runs</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-caption">One row per run — sort any column by clicking its header</div>',
+        '<div class="section-title">Individual runs</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="section-caption">'
+        'One row per run — sort any column by clicking its header'
+        '</div>',
         unsafe_allow_html=True,
     )
 
-    runs_df = pd.DataFrame(
-        [
-            {
-                "Run": row["run_number"],
-                "Status": (row["status"] or "unknown").title(),
-                "Seed": row["random_seed"],
-                "Experiment": row["experiment_id"],
-                "Learning (s)": row["learning_time_seconds"],
-                "Startup (s)": row["startup_time_seconds"],
-                "End-to-end (s)": row["total_time_seconds"],
-                "Popper (s)": row["popper_time_seconds"],
-                "Rounds": row["number_of_rounds"],
-                "Programs": row["number_of_programs"],
-                "Score": row["final_score"],
-            }
-            for row in runs
-        ]
-    )
+    if metadata["approach"] == "consensus":
+        runs_df = pd.DataFrame(
+            [
+                {
+                    "Run": row["run_number"],
+                    "Status": (
+                        row["status"] or "unknown"
+                    ).title(),
+                    "Seed": row["random_seed"],
+                    "Experiment": row["experiment_id"],
+                    "Learner": row["learner"],
+                    "Hypotheses": row[
+                        "number_of_hypotheses"
+                    ],
+                    "Accuracy": row["accuracy"],
+                    "Precision": row["precision"],
+                    "Recall": row["recall"],
+                    "F1": row["f1"],
+                    "TP": row["tp"],
+                    "TN": row["tn"],
+                    "FP": row["fp"],
+                    "FN": row["fn"],
+                }
+                for row in runs
+            ]
+        )
 
-    st.dataframe(
-        runs_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Learning (s)": st.column_config.NumberColumn(format="%.3f"),
-            "Startup (s)": st.column_config.NumberColumn(format="%.3f"),
-            "End-to-end (s)": st.column_config.NumberColumn(format="%.3f"),
-            "Popper (s)": st.column_config.NumberColumn(format="%.3f"),
-            "Score": st.column_config.ProgressColumn(
-                format="%.2f",
-                min_value=0.0,
-                max_value=max(
-                    [r["final_score"] for r in runs if r["final_score"]] or [1.0]
+        st.dataframe(
+            runs_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Accuracy": st.column_config.NumberColumn(
+                    format="%.3f"
                 ),
-            ),
-        },
-    )
+                "Precision": st.column_config.NumberColumn(
+                    format="%.3f"
+                ),
+                "Recall": st.column_config.NumberColumn(
+                    format="%.3f"
+                ),
+                "F1": st.column_config.NumberColumn(
+                    format="%.3f"
+                ),
+            },
+        )
 
-# --- Hypotheses tab ----------------------------------------------------------
+    else:
+        runs_df = pd.DataFrame(
+            [
+                {
+                    "Run": row["run_number"],
+                    "Status": (
+                        row["status"] or "unknown"
+                    ).title(),
+                    "Seed": row["random_seed"],
+                    "Experiment": row["experiment_id"],
+                    "Learning (s)": row[
+                        "learning_time_seconds"
+                    ],
+                    "Startup (s)": row[
+                        "startup_time_seconds"
+                    ],
+                    "End-to-end (s)": row[
+                        "total_time_seconds"
+                    ],
+                    "Popper (s)": row[
+                        "popper_time_seconds"
+                    ],
+                    "Rounds": row["number_of_rounds"],
+                    "Programs": row["number_of_programs"],
+                    "Score": row["final_score"],
+                }
+                for row in runs
+            ]
+        )
+
+        st.dataframe(
+            runs_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Learning (s)": (
+                    st.column_config.NumberColumn(
+                        format="%.3f"
+                    )
+                ),
+                "Startup (s)": (
+                    st.column_config.NumberColumn(
+                        format="%.3f"
+                    )
+                ),
+                "End-to-end (s)": (
+                    st.column_config.NumberColumn(
+                        format="%.3f"
+                    )
+                ),
+                "Popper (s)": (
+                    st.column_config.NumberColumn(
+                        format="%.3f"
+                    )
+                ),
+                "Score": st.column_config.ProgressColumn(
+                    format="%.2f",
+                    min_value=0.0,
+                    max_value=max(
+                        [
+                            r["final_score"]
+                            for r in runs
+                            if r["final_score"]
+                        ]
+                        or [1.0]
+                    ),
+                ),
+            },
+        )
+# --- Hypotheses & predictions tab -------------------------------------------
 
 with tab_hypotheses:
-    st.markdown('<div class="section-title">Learned hypotheses</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-caption">Final program produced by each run</div>',
+        '<div class="section-title">Hypotheses & predictions</div>',
         unsafe_allow_html=True,
     )
 
-    for row in runs:
-        experiment_id = row["experiment_id"]
-        solution = row.get("solution")
+    # ================================================================
+    # CONSENSUS — one hypothesis per client, plus how each one voted
+    # ================================================================
 
-        with st.expander(f"Run {row['run_number']} · experiment #{experiment_id}"):
-            if solution:
+    if metadata["approach"] == "consensus":
+        st.markdown(
+            '<div class="section-caption">'
+            'Each client learns its own hypothesis; the final label is '
+            'decided by majority vote.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        if not runs:
+            st.info("No Consensus runs available.")
+
+        for row in runs:
+            experiment_id = row["experiment_id"]
+
+            with st.expander(
+                f"Run {row['run_number']} · experiment #{experiment_id}",
+                expanded=(len(runs) == 1),
+            ):
+                hypotheses_raw = row.get("hypotheses")
+
+                try:
+                    hypotheses = json.loads(hypotheses_raw) if hypotheses_raw else []
+                except (json.JSONDecodeError, TypeError):
+                    hypotheses = []
+
+                if not hypotheses:
+                    st.caption("No saved hypotheses for this experiment.")
+                    continue
+
+                # --- Client 1 / H1, Client 2 / H2, ... ---
+                for index, hypothesis in enumerate(hypotheses, start=1):
+                    st.markdown(f"**Client {index}** · H{index}")
+
+                    if hypothesis:
+                        st.code("\n".join(hypothesis), language="prolog")
+                    else:
+                        st.caption(
+                            "Empty hypothesis — this client always votes "
+                            "negative, but still counts towards the majority."
+                        )
+
+                # --- this run's predictions, if recorded ---
+                vote_traces_path = (
+                    PROJECT_ROOT
+                    / "artifacts"
+                    / f"experiment_{experiment_id}"
+                    / "consensus"
+                    / "vote_traces.json"
+                )
+
+                if not vote_traces_path.is_file():
+                    st.caption(
+                        "Prediction traces are not available for this experiment."
+                    )
+                    continue
+
+                try:
+                    vote_traces = json.loads(
+                        vote_traces_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
+                    vote_traces = []
+
+                if not vote_traces:
+                    st.caption(
+                        "No prediction traces were recorded for this experiment."
+                    )
+                    continue
+
+                st.divider()
+                st.markdown("**See how each client predicted on a test example**")
+
+                trace_by_example = {
+                    str(trace["example_id"]): trace for trace in vote_traces
+                }
+
+                selected_example_id = st.selectbox(
+                    "Test example",
+                    options=list(trace_by_example.keys()),
+                    format_func=lambda example_id: f"Example {example_id}",
+                    key=f"consensus_example_{experiment_id}",
+                )
+
+                trace = trace_by_example[selected_example_id]
+
+                vote_columns = st.columns(len(trace["votes"]))
+
+                for column, vote in zip(vote_columns, trace["votes"]):
+                    with column:
+                        client_number = vote["hypothesis"].lstrip("H")
+                        st.caption(f"Client {client_number}")
+                        st.markdown(
+                            render_vote_badge(vote["prediction"] == "POS"),
+                            unsafe_allow_html=True,
+                        )
+
+                st.write("")
+
+                correct = trace["correct"]
+                st.markdown(
+                    f"**{trace['positive_votes']}/{trace['number_of_voters']}** "
+                    f"clients predicted positive (at least "
+                    f"**{trace['required_majority']}** needed for a majority) "
+                    f"→ consensus predicts **{trace['prediction']}**. True "
+                    f"label: **{trace['true_label']}** — "
+                    + ("✓ correct." if correct else "✕ incorrect.")
+                )
+
+    # ================================================================
+    # COLLABORATION / COORDINATION — one shared hypothesis, plus each
+    # client's contribution to the aggregated outcome
+    # ================================================================
+
+    else:
+        st.markdown(
+            '<div class="section-caption">'
+            "Final program produced by each run, and how each client's "
+            'local evaluation contributed to it.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        for row in runs:
+            experiment_id = row["experiment_id"]
+            solution = row.get("solution")
+
+            with st.expander(
+                f"Run {row['run_number']} · experiment #{experiment_id}",
+                expanded=(len(runs) == 1),
+            ):
+                if not solution:
+                    st.caption("No saved hypothesis for this experiment.")
+                    continue
+
                 st.code(solution, language="prolog")
-            else:
-                st.caption("No saved hypothesis for this experiment.")
 
+                run_client_rows = sorted(
+                    (
+                        client_row
+                        for client_row in client_results
+                        if int(client_row["run_number"]) == row["run_number"]
+                    ),
+                    key=lambda client_row: client_row["client_id"],
+                )
+
+                if not run_client_rows:
+                    continue
+
+                st.write("")
+                st.markdown("**Client contribution to this hypothesis**")
+
+                for client_row in run_client_rows:
+                    accepted = bool(client_row["accepted_solution"])
+                    epsilon_positive = client_row["final_epsilon_positive"] or "—"
+                    epsilon_negative = client_row["final_epsilon_negative"] or "—"
+                    verdict = (
+                        "accepted this hypothesis"
+                        if accepted
+                        else "did not fully accept it"
+                    )
+
+                    label_column, detail_column = st.columns([1, 4])
+
+                    with label_column:
+                        st.markdown(f"**Client {client_row['client_id']}**")
+
+                    with detail_column:
+                        st.caption(
+                            f"Reported (ε+={epsilon_positive}, "
+                            f"ε−={epsilon_negative}), score "
+                            f"{client_row['final_score']} — {verdict}."
+                        )
 # --- Clients tab ----------------------------------------------------------
 
 with tab_clients:

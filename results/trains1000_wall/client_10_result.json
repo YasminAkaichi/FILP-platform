@@ -1,0 +1,20 @@
+{
+  "client_id": 10,
+  "dataset_partition": "/Users/yasmineakaichi/Desktop/FILP-plateform/datasets/trains1000_part10",
+  "number_of_examples": 99,
+  "number_of_positive_examples": 39,
+  "number_of_negative_examples": 60,
+  "number_of_evaluations": 750,
+  "total_eval_wall": 0.3159814430400729,
+  "total_eval_cpu": 0.29682100000000067,
+  "average_eval_wall": 0.0004213085907200972,
+  "average_eval_cpu": 0.00039576133333333425,
+  "final_epsilon_positive": "some",
+  "final_epsilon_negative": "some",
+  "accepted_solution": false,
+  "final_score": 42.0,
+  "tp": 5,
+  "fn": 34,
+  "tn": 37,
+  "fp": 23
+}

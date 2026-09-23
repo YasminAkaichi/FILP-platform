@@ -53,3 +53,21 @@ class ClientResult:
     fn: int
     tn: int
     fp: int
+
+@dataclass
+class ConsensusResult:
+    learner: str
+    number_of_clients: int
+    number_of_hypotheses: int
+
+    hypotheses: list[list[str]]
+
+    tp: int
+    fn: int
+    tn: int
+    fp: int
+
+    accuracy: float
+    precision: float
+    recall: float
+    f1: float

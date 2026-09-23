@@ -1,0 +1,13 @@
+{
+  "solution": "zendo(A):-contact(B,C),red(C),size(B,D),small(D),piece(A,B)",
+  "solution_found": true,
+  "total_time": 7.550133750017267,
+  "startup_time": 5.49544091700227,
+  "learning_time": 0.8095866660005413,
+  "popper_time": 0.1345457500719931,
+  "federation_time": 5.993145869841101,
+  "federation_ratio": 0.7937800929456905,
+  "number_of_rounds": 123,
+  "number_of_programs": 123,
+  "final_score": 52.0
+}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json
-from core.results import ClientResult, ServerResult
+from core.results import ClientResult, ServerResult, ConsensusResult
 import subprocess
 import sys
 import time
@@ -10,6 +10,9 @@ from core.experiment import ExperimentConfig
 from partitioning.dataset_reader import read_dataset
 from partitioning.partitioner import partition_dataset
 from partitioning.writer import write_partitions
+from partitioning.splitter import split_train_test
+from partitioning.consensus_writer import write_consensus_dataset
+import json 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATASETS_DIR = PROJECT_ROOT / "datasets"
@@ -27,6 +30,13 @@ class ExperimentLauncher:
         try:
             if config.approach == "collaboration":
                 self._run_collaboration(
+                    config=config,
+                    experiment_id=experiment_id,
+                    repository=repository,
+                )
+
+            elif config.approach == "consensus":
+                self._run_consensus(
                     config=config,
                     experiment_id=experiment_id,
                     repository=repository,
@@ -114,6 +124,8 @@ class ExperimentLauncher:
             server_bind_address,
             "--output-dir",
             str(experiment_directory),
+            "--timing-mode",
+            config.timing_mode,
         ]
 
         print("\n========== STARTING EXPERIMENT ==========")
@@ -444,6 +456,302 @@ class ExperimentLauncher:
         finally:
             self._stop_processes(processes)
 
+    
+    def _run_consensus(
+    self,
+    config: ExperimentConfig,
+    experiment_id: int,
+    repository: ExperimentRepository,
+) -> None:
+        source_dataset_directory = (
+            DATASETS_DIR / config.dataset
+        )
+
+        if not source_dataset_directory.is_dir():
+            raise FileNotFoundError(
+                f"Source dataset not found: "
+                f"{source_dataset_directory}"
+            )
+
+        print(
+            "\n[Launcher] Preparing Consensus experiment..."
+        )
+
+        # --------------------------------------------------
+        # 1. Read the complete original dataset
+        # --------------------------------------------------
+
+        dataset = read_dataset(
+            source_dataset_directory
+        )
+
+        # --------------------------------------------------
+        # 2. Global TRAIN / TEST split
+        # --------------------------------------------------
+
+        test_ratio = 0.2
+
+        train_dataset, test_dataset = split_train_test(
+            dataset=dataset,
+            test_ratio=test_ratio,
+            random_seed=config.random_seed,
+        )
+
+        print(
+            "[Launcher] Global split: "
+            f"train={len(train_dataset.positive_examples) + len(train_dataset.negative_examples)} "
+            f"examples, "
+            f"test={len(test_dataset.positive_examples) + len(test_dataset.negative_examples)} "
+            f"examples"
+        )
+
+        # --------------------------------------------------
+        # 3. Partition TRAIN only between clients
+        # --------------------------------------------------
+
+        train_partitions = partition_dataset(
+            dataset=train_dataset,
+            number_of_clients=config.number_of_clients,
+            strategy=config.partition_strategy,
+            random_seed=config.random_seed,
+        )
+
+        # --------------------------------------------------
+        # 4. Write client TRAIN datasets + common TEST
+        # --------------------------------------------------
+
+        consensus_directory = write_consensus_dataset(
+            dataset_name=config.dataset,
+            train_partitions=train_partitions,
+            test_dataset=test_dataset,
+            strategy=config.partition_strategy,
+            random_seed=config.random_seed,
+            test_ratio=test_ratio,
+            output_root=DATASETS_DIR / "generated",
+        )
+
+        client_datasets = [
+            consensus_directory
+            / "train"
+            / f"{config.dataset}_part{client_id}"
+            for client_id in range(
+                1,
+                config.number_of_clients + 1
+            )
+        ]
+
+        global_test_dataset = (
+            consensus_directory / "test"
+        )
+
+        print(
+            "[Launcher] Consensus datasets ready:"
+        )
+
+        for client_id, client_dataset in enumerate(
+            client_datasets,
+            start=1,
+        ):
+            print(
+                f"  Client {client_id}: "
+                f"{client_dataset}"
+            )
+
+        print(
+            f"  Global test: {global_test_dataset}"
+        )
+
+        # --------------------------------------------------
+        # 5. Prepare Consensus result directory
+        # --------------------------------------------------
+
+        consensus_output_directory = (
+            PROJECT_ROOT
+            / "artifacts"
+            / f"experiment_{experiment_id}"
+            / "consensus"
+        )
+
+        consensus_output_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        # 5. Start Consensus Flower server
+        # --------------------------------------------------
+
+        
+        server_bind_address = self._get_server_bind_address(
+            config.server_address
+        )
+
+        server_command = [
+            sys.executable,
+            "-m",
+            "engines.consensus.server",
+            "--num-clients",
+            str(config.number_of_clients),
+            "--server-address",
+            server_bind_address,
+            "--output-dir",
+            str(consensus_output_directory),
+        ]
+
+        print(
+            "\n[Launcher] Starting Consensus server..."
+        )
+
+        processes = []
+        client_processes = []
+
+        try:
+            server_process = subprocess.Popen(
+                server_command,
+                cwd=PROJECT_ROOT,
+            )
+
+            processes.append(server_process)
+
+            time.sleep(2)
+
+            if server_process.poll() is not None:
+                raise RuntimeError(
+                    "Consensus server stopped unexpectedly "
+                    "during startup."
+                )
+
+            # --------------------------------------------------
+            # 6. Start Consensus clients
+            # --------------------------------------------------
+
+            for client_id, client_dataset in enumerate(
+                client_datasets,
+                start=1,
+            ):
+                client_command = [
+                    sys.executable,
+                    "-m",
+                    "engines.consensus.client",
+                    "--client-id",
+                    str(client_id),
+                    "--learner",
+                    config.learner,
+                    "--dataset",
+                    str(client_dataset),
+                    "--test-dataset",
+                    str(global_test_dataset),
+                    "--server-address",
+                    config.server_address,
+                    "--timeout",
+                    str(config.timeout),
+                ]
+
+                print(
+                    f"[Launcher] Starting Consensus "
+                    f"client {client_id}..."
+                )
+
+                client_process = subprocess.Popen(
+                    client_command,
+                    cwd=PROJECT_ROOT,
+                )
+
+                processes.append(client_process)
+                client_processes.append(client_process)
+
+            # --------------------------------------------------
+            # 7. Wait for Flower
+            # --------------------------------------------------
+
+            server_return_code = server_process.wait()
+
+            if server_return_code != 0:
+                raise RuntimeError(
+                    "Consensus server failed with return code "
+                    f"{server_return_code}."
+                )
+
+            for client_id, client_process in enumerate(
+                client_processes,
+                start=1,
+            ):
+                client_return_code = client_process.wait(
+                    timeout=30
+                )
+
+                if client_return_code != 0:
+                    raise RuntimeError(
+                        f"Consensus client {client_id} failed "
+                        f"with return code "
+                        f"{client_return_code}."
+                    )
+
+            print(
+                "\n[Launcher] Consensus Flower execution "
+                "completed successfully."
+            )
+            # --------------------------------------------------
+            # 7. Load and persist Consensus result
+            # --------------------------------------------------
+
+            server_result_path = (
+                consensus_output_directory
+                / "server_result.json"
+            )
+
+            if not server_result_path.is_file():
+                raise FileNotFoundError(
+                    f"Consensus server result not found: "
+                    f"{server_result_path}"
+                )
+
+            with server_result_path.open(
+                "r",
+                encoding="utf-8",
+            ) as file:
+                raw_result = json.load(file)
+
+            metrics = raw_result["metrics"]
+
+            consensus_result = ConsensusResult(
+                learner=raw_result["learner"],
+                number_of_clients=raw_result["number_of_clients"],
+                number_of_hypotheses=raw_result[
+                    "number_of_hypotheses"
+                ],
+                hypotheses=raw_result["hypotheses"],
+                tp=metrics["tp"],
+                fn=metrics["fn"],
+                tn=metrics["tn"],
+                fp=metrics["fp"],
+                accuracy=metrics["accuracy"],
+                precision=metrics["precision"],
+                recall=metrics["recall"],
+                f1=metrics["f1"],
+            )
+
+            repository.save_consensus_result(
+                experiment_id=experiment_id,
+                result=consensus_result,
+            )
+
+            print(
+                "[Launcher] Consensus result saved "
+                "to database."
+            )
+
+        except KeyboardInterrupt:
+            print(
+                "\n[Launcher] Consensus experiment "
+                "interrupted by the user."
+            )
+            raise
+
+        finally:
+            self._stop_processes(processes)
+
+
+
 
     def _run_coordination(
     self,
@@ -740,7 +1048,7 @@ class ExperimentLauncher:
         return client_datasets
     
 
-
+ 
 
     def _prepare_client_datasets(
     self,
@@ -883,3 +1191,32 @@ class ExperimentLauncher:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+
+
+
+"""
+launch consensus: 
+PYTHONPATH="$PWD/symbolic/popper-v4:$PWD" \
+python -c "
+from core.launcher import ExperimentLauncher
+from core.experiment import ExperimentConfig
+
+config = ExperimentConfig(
+    approach='consensus',
+    dataset='zendo1',
+    number_of_clients=2,
+    partition_strategy='iid',
+    learner='popper',
+    random_seed=42,
+)
+
+launcher = ExperimentLauncher()
+
+launcher._run_consensus(
+    config=config,
+    experiment_id=999,
+    repository=None,
+)
+"
+
+"""

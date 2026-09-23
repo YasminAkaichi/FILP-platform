@@ -106,6 +106,7 @@ class FedPopper(Strategy):
     min_available_clients: int = 2,
     fit_metrics_aggregation_fn=None,
     accept_failures: bool = False,
+    with_suspension: bool = True,
     
     ):
         super().__init__()
@@ -144,7 +145,8 @@ class FedPopper(Strategy):
         self._lock        = threading.Lock()
         self._current_hyp = None
         self._current_fb  = None
-        self.with_suspension = True  # True = wall-clock, False = CPU time
+        #self.with_suspension = True  # True = wall-clock, False = CPU time
+        self.with_suspension = with_suspension
         self.timer = time.perf_counter if self.with_suspension else time.process_time
 
         self.tFedPopper = 0.0

@@ -83,7 +83,29 @@ CREATE TABLE IF NOT EXISTS client_results (
         REFERENCES experiments(id)
         ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS consensus_results (
+    experiment_id INTEGER PRIMARY KEY,
 
+    learner TEXT NOT NULL,
+    number_of_clients INTEGER NOT NULL,
+    number_of_hypotheses INTEGER NOT NULL,
+
+    hypotheses TEXT NOT NULL,
+
+    tp INTEGER,
+    fn INTEGER,
+    tn INTEGER,
+    fp INTEGER,
+
+    accuracy REAL,
+    precision REAL,
+    recall REAL,
+    f1 REAL,
+
+    FOREIGN KEY (experiment_id)
+        REFERENCES experiments(id)
+        ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS benchmarks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 

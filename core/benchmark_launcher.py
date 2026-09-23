@@ -45,6 +45,8 @@ class BenchmarkLauncher:
                     learner=config.learner,
                     random_seed=random_seed,
                     rounds=config.rounds,
+                    timeout=config.timeout,
+                    timing_mode=config.timing_mode,
                     server_address=config.server_address,
                 )
 

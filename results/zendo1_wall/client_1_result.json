@@ -1,0 +1,20 @@
+{
+  "client_id": 1,
+  "dataset_partition": "/Users/yasmineakaichi/Desktop/FILP-plateform/datasets/zendo1_part1",
+  "number_of_examples": 20,
+  "number_of_positive_examples": 10,
+  "number_of_negative_examples": 10,
+  "number_of_evaluations": 123,
+  "total_eval_wall": 0.02614762118901126,
+  "total_eval_cpu": 0.021496000000000293,
+  "average_eval_wall": 0.00021258228608952244,
+  "average_eval_cpu": 0.0001747642276422788,
+  "final_epsilon_positive": "all",
+  "final_epsilon_negative": "none",
+  "accepted_solution": true,
+  "final_score": 20.0,
+  "tp": 10,
+  "fn": 0,
+  "tn": 10,
+  "fp": 0
+}

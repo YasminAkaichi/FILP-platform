@@ -470,16 +470,13 @@ st.divider()
 # ---------------------------------------------------------------------
 
 st.markdown('<div class="section-title">About the researcher</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="section-caption">The person behind this framework</div>',
-    unsafe_allow_html=True,
-)
+
 
 photo_column, bio_column = st.columns([1, 3])
 
 with photo_column:
     if PHOTO_PATH.is_file():
-        st.image(str(PHOTO_PATH), use_container_width=True)
+        st.image(str(PHOTO_PATH), width=150)
     else:
         initials = "".join(part[0] for part in RESEARCHER_NAME.split()[:2]).upper()
         st.markdown(f'<div class="avatar-placeholder">{initials}</div>', unsafe_allow_html=True)
