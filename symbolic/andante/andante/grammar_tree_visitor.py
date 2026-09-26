@@ -25,7 +25,15 @@ in the period of October 1st 2021 to August 31st 2022 under the supervision of
 Isabelle Linden, Jean-Marie Jacquet and Wim Vanhoof. 
 """
 
+import itertools
 from parsimonious.nodes import NodeVisitor
+
+# Module-level counter used to mint a fresh, never-reused symbol for every
+# occurrence of Prolog's anonymous variable "_" (and "_Foo"-style variants).
+# Unlike a named variable, each textual occurrence of "_" denotes a distinct,
+# independent variable -- even within the same clause -- so two "_" in
+# is_list([_|_]) must never be unified with one another.
+_anonymous_variable_counter = itertools.count()
 
 from andante.logic_concepts import (
     Clause, 
@@ -108,7 +116,9 @@ class Visitor(NodeVisitor):
     visit_integer = lambda self, node, _: int(  node.text)
     visit_float   = lambda self, node, _: float(node.text)
     
-    def visit_variable(self, node, visited_children) -> Variable:
+    visit_variable = visit_choice
+
+    def visit_named_variable(self, node, visited_children) -> Variable:
         symbol_node, tally_node = node.children
         symbol = symbol_node.text
         if tally_node.text:
@@ -116,6 +126,13 @@ class Visitor(NodeVisitor):
         else:
             tally_id = 0
         return Variable(symbol, tally_id)
+
+    def visit_anonymous_variable(self, node, visited_children) -> Variable:
+        """ Every occurrence of "_" (or "_Foo") is its own fresh variable,
+        never shared with any other occurrence -- including another "_" in
+        the very same clause. """
+        symbol = 'Anon%d' % next(_anonymous_variable_counter)
+        return Variable(symbol, 0)
 
     
             #-----------------------------------------------------#

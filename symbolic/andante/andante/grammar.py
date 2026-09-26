@@ -32,10 +32,12 @@ GRAMMAR = Grammar(
             #                   Basic grammar                     #
             #-----------------------------------------------------#
     
-    word      = ~"[a-z]\w*"
-    variable  = ~"[A-Z]\w*" ~"\d*"
+    word              = ~"[a-z]\w*"
+    variable          = anonymous_variable / named_variable
+    named_variable    = ~"[A-Z]\w*" ~"\d*"
+    anonymous_variable = ~"_\w*"
     number    = float / integer
-    integer   = ~"\d+"
+    integer   = ~"[+-]?\d+"
     float     = ~"[+-]?(\d*\.\d+)"
     __        = ~"\s*"                                                # Represents whitespaces
     
@@ -65,7 +67,7 @@ GRAMMAR = Grammar(
     body             = atom __ ("," __ atom __)*
     atom             = "true" / "false" / predicate / comparison / is_evaluation
     predicate        = predname __ "(" __ term __ ("," __ term __)* ")"
-    term             = compoundterm / variable / constant 
+    term             = compoundterm / list / variable / constant
     compoundterm     = funcname __ "(" __ term __ ("," __ term __)* ")"
     predname         = word
     funcname         = word

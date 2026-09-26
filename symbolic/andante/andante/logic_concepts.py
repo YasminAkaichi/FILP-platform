@@ -188,10 +188,23 @@ class Constant(Term):
         
     def __repr__(self): return str(self.value)
     
-    def to_variable_name(self): # TODO change to to_variable_symbol
-        """ Returns a valid unique variable symbol """
-        if isinstance(self.value, str): return self.value.capitalize()
-        else:                           return 'V' + str(self.value).replace('.','_')
+    def to_variable_name(self, type_name=None): # TODO change to to_variable_symbol
+        """ Returns a valid unique variable symbol.
+
+        type_name, when given, is appended to disambiguate two
+        occurrences of the same raw value used under two different
+        declared types — e.g. the integer 1 used once as an "ex"
+        (state) identifier and once as an "int" (score) value in the
+        same example. Without this, both would collapse to the same
+        variable name (e.g. "V1"), silently merging two logically
+        unrelated slots in the generalized clause and causing
+        inconsistent unification later on.
+        """
+        if isinstance(self.value, str): base = self.value.capitalize()
+        else:                           base = 'V' + str(self.value).replace('.','_')
+        if type_name:
+            return base + '_' + str(type_name)
+        return base
         
     def apply(self, fun): return fun(self)
     
@@ -303,14 +316,26 @@ class List(Term):
             return self.__class__(e1, e2)
         except: return None
 
-    def __repr__(self): 
+    def __repr__(self):
         s1 = ', '.join(repr(e) for e in self.elements1)
         if self.elements2 is None:
             return '[%s]' % (s1)
         else:
             s2 = repr(self.elements2)
             return '[%s | %s]' % (s1, s2)
-        
+
+    def to_variable_name(self, type_name=None):
+        """ Same purpose as Constant.to_variable_name(), extended to
+        list-valued constants (e.g. a modeh argument declared +list
+        bound to an actual ground list like [1,2,3]). Lists have no
+        single scalar value to name from, so the name is derived from
+        the list's own printed representation instead, keeping it
+        deterministic (the same list always gets the same name). """
+        base = 'L' + str(abs(hash(str(self))) % 100000)
+        if type_name:
+            return base + '_' + str(type_name)
+        return base
+
     def unify(self, other, subst):
         if   isinstance(other, Variable):
             other.unify(self, subst)
@@ -327,13 +352,23 @@ class List(Term):
                 new_other = List(other.elements1[len(self.elements1):], other.elements2)
             else:
                 new_other = other.elements2
-                
+
             if self.elements2 is None:
                 if new_other is None:
                     return
                 else:
                     raise UnificationError(self.elements2, new_other)
             else:
+                # new_other can be a bare Python None here (both lists
+                # ran out of explicit elements at the same position with
+                # no remaining tail on the "other" side). self.elements2
+                # is a term (usually a Variable) that must be bound to
+                # the empty list [] in that case -- not to None itself,
+                # which would silently corrupt the substitution (any
+                # variable bound to None crashes the next unrelated
+                # substitution lookup, since None has no .apply()).
+                if new_other is None:
+                    new_other = List([], None)
                 self.elements2.unify(new_other, subst)
         
 

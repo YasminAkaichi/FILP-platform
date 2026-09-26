@@ -19,7 +19,7 @@ in the period of October 1st 2021 to August 31st 2022 under the supervision of
 Isabelle Linden, Jean-Marie Jacquet and Wim Vanhoof. 
 """
 
-from andante.logic_concepts import Clause, Constant, Variable, Function, Goal, Type, extract_variables
+from andante.logic_concepts import Clause, Constant, Variable, Function, Goal, Type, List, UnificationError, extract_variables
 from andante.utils import generate_variable_names, multiple_replace
 import re
 class SubstitutionError(Exception):
@@ -168,11 +168,67 @@ class Substitution:
             return self[atom2]
         elif isinstance(atom1, Type):
             if   isinstance(atom2, (Constant, Function)): raise SubstitutionError(atom1, atom2)
-            elif isinstance(atom2, Variable): 
+            elif isinstance(atom2, Variable):
                 self[atom2] = atom1
                 return atom1
+            elif isinstance(atom2, Type):
+                # Missing case: unifying two Type declarations directly
+                # against each other (e.g. two occurrences of the same
+                # variable in one literal, like geq(V,V) against mode
+                # geq(+element,+element) -- the second occurrence unifies
+                # the already-stored Type("+","element") against the
+                # freshly-derived one for the same slot). There was no
+                # branch for Type-vs-Type at all, so this fell through
+                # every if/elif with no return statement, silently
+                # yielding None -- which then got written into
+                # self.subst and crashed the next unrelated substitution
+                # lookup (None has no .apply()).
+                if atom1.sign == atom2.sign and atom1.name == atom2.name:
+                    return atom1
+                else:
+                    raise SubstitutionError(atom1, atom2)
+            else:
+                raise SubstitutionError(atom1, atom2)
         elif isinstance(atom2, Type):
             return self.unify(atom2, atom1)
+        # andante.logic_concepts.List (Prolog list terms, e.g. [H|T]) was
+        # never wired into this method -- only List's own .unify() (used
+        # by the query solver) handled it, so bottom-clause construction
+        # crashed with a TypeError whenever a mode argument was list-typed
+        # (e.g. modeh(1,f(+list))) and bound to an actual list example.
+        elif isinstance(atom1, List) and isinstance(atom2, Variable):
+            self[atom2] = atom1
+            return self[atom2]
+        elif isinstance(atom1, Variable) and isinstance(atom2, List):
+            self[atom1] = atom2
+            return self[atom1]
+        elif isinstance(atom1, List) and isinstance(atom2, List):
+            # Delegate to List.unify() itself (andante.logic_concepts),
+            # which already correctly handles the "[H|T]" partial-list
+            # case (matching a short prefix pattern against a longer
+            # ground list and binding the tail variable to whatever
+            # remains) -- it mutates this same Substitution via
+            # Variable.unify()'s subst[var]=value calls, so no separate
+            # reimplementation is needed here.
+            try:
+                atom1.unify(atom2, self)
+            except UnificationError:
+                raise SubstitutionError(atom1, atom2)
+            # NOTE: deliberately NOT self.substitute(atom1) here. List
+            # unification can introduce fresh tail variables that were
+            # never registered via add_variable()/add_variables(); when
+            # that happens, Substitution.__getitem__ raises KeyError
+            # inside List.apply()'s fun callback, and List.apply()'s
+            # blanket "except: return None" silently swallows it,
+            # smuggling a bare None into self.subst that crashes the
+            # *next*, unrelated __setitem__ call (its "resubstitute
+            # everything" loop calls .apply() on every stored value).
+            # The unsubstituted atom1 is a valid, non-None Term and the
+            # unification side effects (the only part callers actually
+            # rely on) have already been applied to `self` above.
+            return atom1
+        elif isinstance(atom1, List) or isinstance(atom2, List):
+            raise SubstitutionError(atom1, atom2)
         else:
             message = "Either %s or %s isn't a Constant, Variable or Function object"
             raise TypeError(message)

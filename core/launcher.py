@@ -47,6 +47,12 @@ class ExperimentLauncher:
                     experiment_id=experiment_id,
                     repository=repository,
                 )
+            elif config.approach == "centralized":
+                self._run_centralized(
+                    config=config,
+                    experiment_id=experiment_id,
+                    repository=repository,
+                )
             else:
                 raise NotImplementedError(
                     f"The approach '{config.approach}' is not implemented yet."
@@ -740,6 +746,36 @@ class ExperimentLauncher:
                 "to database."
             )
 
+            # --------------------------------------------------
+            # 8. Persist each client's local dataset partition,
+            #    so the Dataset explorer tab has something to show.
+            # --------------------------------------------------
+
+            for client_id, (client_dataset, partition) in enumerate(
+                zip(client_datasets, train_partitions),
+                start=1,
+            ):
+                repository.save_client_dataset_info(
+                    experiment_id=experiment_id,
+                    client_id=client_id,
+                    dataset_partition=str(client_dataset),
+                    number_of_examples=(
+                        len(partition.positive_examples)
+                        + len(partition.negative_examples)
+                    ),
+                    number_of_positive_examples=len(
+                        partition.positive_examples
+                    ),
+                    number_of_negative_examples=len(
+                        partition.negative_examples
+                    ),
+                )
+
+            print(
+                "[Launcher] Client dataset partitions saved "
+                "to database."
+            )
+
         except KeyboardInterrupt:
             print(
                 "\n[Launcher] Consensus experiment "
@@ -1025,6 +1061,139 @@ class ExperimentLauncher:
             self._stop_processes(
                 processes
             )
+    def _run_centralized(
+        self,
+        config: ExperimentConfig,
+        experiment_id: int,
+        repository: ExperimentRepository,
+    ) -> None:
+        """
+        A non-federated baseline: run a single ILP learner once on the
+        whole dataset — no clients, no server, no network. This is what
+        "Try & Learn" on the Inductive Logic Programming page triggers.
+
+        Two learners are supported via config.learner:
+          - "popper" (default): Popper 1.1.0 (popper-core)
+          - "andante": Andante, a Progol-style ILP system already used
+            by Learning by Consensus
+
+        Both run as a SUBPROCESS, not in-process. For Popper, this is
+        required: popper-core's timeout uses signal.alarm(), which only
+        works in a process's main thread, and Streamlit executes each
+        page in a worker thread — calling learn_solution() directly from
+        a Streamlit callback fails with "signal only works in main
+        thread of the main interpreter". Andante has no such constraint,
+        but is run the same way for consistency and so a pathological
+        run can still be killed on timeout without risking the Streamlit
+        process itself.
+        """
+
+        learner = config.learner or "popper"
+        runner_module = (
+            "engines.centralized.andante_runner"
+            if learner == "andante"
+            else "engines.centralized.runner"
+        )
+        learner_label = (
+            "Andante"
+            if learner == "andante"
+            else "Popper 1.1.0, popper-core"
+        )
+
+        if learner == "andante":
+            # Native Andante examples are single .pl files under
+            # datasets/andante/ (e.g. family.pl, short_family.pl) —
+            # hand-written, not derived from a Popper dataset directory.
+            dataset_path = DATASETS_DIR / "andante" / f"{config.dataset}.pl"
+            if not dataset_path.is_file():
+                raise FileNotFoundError(
+                    f"Andante dataset not found: {dataset_path}"
+                )
+        else:
+            dataset_path = DATASETS_DIR / config.dataset
+            if not dataset_path.is_dir():
+                raise FileNotFoundError(
+                    f"Dataset not found: {dataset_path}"
+                )
+
+        experiment_directory = (
+            PROJECT_ROOT
+            / "artifacts"
+            / f"experiment_{experiment_id}"
+        )
+
+        experiment_directory.mkdir(parents=True, exist_ok=True)
+
+        print("\n========== STARTING CENTRALIZED RUN ==========")
+        print(f"Approach : centralized ({learner_label})")
+        print(f"Dataset  : {config.dataset}")
+        print(f"Timeout  : {config.timeout}s")
+        print("================================================\n")
+
+        runner_command = [
+            sys.executable,
+            "-m",
+            runner_module,
+            "--dataset",
+            str(dataset_path),
+            "--timeout",
+            str(config.timeout),
+            "--output-dir",
+            str(experiment_directory),
+        ]
+
+        process = subprocess.run(
+            runner_command,
+            cwd=PROJECT_ROOT,
+            timeout=config.timeout + 30,
+        )
+
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"The centralized {learner_label} run exited with code "
+                f"{process.returncode}."
+            )
+
+        result_path = experiment_directory / "server_result.json"
+
+        if not result_path.is_file():
+            raise FileNotFoundError(
+                f"Centralized run result not found: {result_path}"
+            )
+
+        server_data = json.loads(result_path.read_text(encoding="utf-8"))
+
+        server_result = ServerResult(
+            solution=server_data.get("solution"),
+            solution_found=bool(server_data.get("solution_found", False)),
+            total_time=float(server_data.get("total_time", 0.0)),
+            startup_time=float(server_data.get("startup_time", 0.0)),
+            learning_time=float(server_data.get("learning_time", 0.0)),
+            popper_time=float(server_data.get("popper_time", 0.0)),
+            federation_time=float(server_data.get("federation_time", 0.0)),
+            federation_ratio=float(server_data.get("federation_ratio", 0.0)),
+            number_of_rounds=int(server_data.get("number_of_rounds", 0)),
+            number_of_programs=int(server_data.get("number_of_programs", 0)),
+            final_score=float(server_data.get("final_score", 0.0)),
+            tp=int(server_data.get("tp", 0)),
+            fn=int(server_data.get("fn", 0)),
+            tn=int(server_data.get("tn", 0)),
+            fp=int(server_data.get("fp", 0)),
+        )
+
+        repository.save_server_result(
+            experiment_id=experiment_id,
+            result=server_result,
+            all_clients_accepted=server_result.solution_found,
+        )
+
+        print(
+            "\n[Launcher] Centralized run completed "
+            f"({'solution found' if server_result.solution_found else 'no solution'} "
+            f"in {server_result.total_time:.2f}s, "
+            f"{server_result.number_of_programs} programs tested)."
+        )
+
     def _get_client_datasets_old(
         self,
         config: ExperimentConfig,

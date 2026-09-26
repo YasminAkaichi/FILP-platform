@@ -1,0 +1,13 @@
+% Row to add to the existing "Andante engine fixes" summary table.
+% Column order assumed: Cause / Location / Symptom / Fix. Adjust to match
+% your table's actual column headers if they differ.
+
+Cause 5 & \texttt{logic\_concepts.py}, \texttt{learner.py} &
+Two differently-typed constants sharing the same raw value (e.g.\ a
+game-state id and a score both equal to $1$) collapsed into the same
+generalized variable name, producing a malformed bottom clause and an
+unhandled \texttt{AttributeError} during unification &
+Made \texttt{to\_variable\_name()} type-aware; disambiguates only
+same-literal collisions and propagates the head's naming choice to
+matching body literals via a \texttt{head\_renames} table, so as not to
+break beneficial cross-literal variable sharing on other datasets \\

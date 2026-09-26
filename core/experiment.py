@@ -6,6 +6,7 @@ Approach = Literal[
     "collaboration",
     "consensus",
     "coordination",
+    "centralized",
 ]
 
 PartitionStrategy = Literal[

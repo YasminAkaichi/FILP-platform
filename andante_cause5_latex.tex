@@ -1,0 +1,85 @@
+\subsection{Cause 5: Type-Unaware Variable Naming in Bottom-Clause Generalization}
+\label{sec:andante-cause5}
+
+A fifth defect was identified in Andante's construction of the generalized
+bottom clause (Algorithm~1 of \citet{muggleton1995inverse}). During
+bottom-clause construction, every ground constant bound to a $+$-typed
+(input) or $-$-typed (output) mode argument must be replaced by a fresh
+program variable, so that the resulting clause generalizes beyond the
+single seed example it was built from. This renaming was performed by
+\texttt{Constant.to\_variable\_name()}, which derived the variable's
+display symbol \emph{solely} from the constant's raw value (e.g.\ the
+integer $1$ always produced the symbol \texttt{V1}), with no reference to
+the constant's declared Progol type.
+
+This is unsound whenever two \emph{different}-typed constants occurring
+as distinct arguments of the \emph{same} literal happen to share the same
+raw value. In the \textsc{iggp-rps} (general game playing, rock-paper-scissors)
+domain, the target example
+$\mathtt{next\_score(1, p2, 1)}$ binds the game-state identifier
+(declared type \texttt{ex}) and the numeric score (declared type
+\texttt{int}) to the same value $1$. Because naming ignored type, both
+occurrences were mapped to the identical variable \texttt{V1}, and the
+generalized head atom collapsed from the intended
+$\mathtt{next\_score(V_{ex}, P, V_{int})}$ to the malformed
+$\mathtt{next\_score(V1, P2, V1)}$ — a single variable erroneously
+occupying two semantically unrelated argument positions. This
+ill-formed clause later caused unification to attempt binding one
+variable to two incompatible types in sequence, raising an unhandled
+\texttt{AttributeError} deep inside the substitution engine and aborting
+the learning process entirely.
+
+\paragraph{Fix.} \texttt{to\_variable\_name()} was extended with an
+optional \texttt{type\_name} parameter (default \texttt{None}, preserving
+the method's original zero-argument contract). Within
+\texttt{build\_bottom\_i}, a local collision table records, for each
+literal being generalized, the type first associated with a given base
+variable name; if a \emph{second}, differently-typed constant would map
+to that same base name \emph{within the same literal}, it is instead
+assigned a disambiguated name (e.g.\ \texttt{V1\_int}). A second table,
+\texttt{head\_renames}, records the names chosen while generalizing the
+head atom and is consulted while generalizing every subsequent body
+literal, so that a value disambiguated in the head (such as the
+\texttt{int}-typed $1$) is named identically wherever it recurs in the
+clause (for instance, as the output of \texttt{my\_succ/2}). Without this
+propagation, the head and the relevant body literal would use different
+symbols for what must be the same variable, and the correct clause would
+remain syntactically unreachable by the refinement search.
+
+\paragraph{Scope of the fix.} The collision check is deliberately local
+to a single literal's own argument list, rather than applied to every
+recurrence of a value throughout the whole bottom clause. An earlier,
+more aggressive version of the fix disambiguated \emph{any} same-valued,
+differently-typed constant pair anywhere in the clause; while this also
+corrected \textsc{iggp-rps}, it substantially degraded search performance
+on the Zendo dataset (from $\approx$18\,s to over 170\,s without
+convergence), because Zendo's state, piece, and attribute identifiers are
+frequently small integers that legitimately co-occur across different
+literals and are intentionally merged into shared variables by Andante's
+anti-unification mechanism. Restricting disambiguation to genuine
+intra-literal collisions preserves this beneficial sharing everywhere it
+is safe, and only intervenes in the narrow case that is actually
+unsound.
+
+\paragraph{Validation.} With this fix, \textsc{iggp-rps} converges to
+three clauses structurally identical to the reference solution obtained
+independently by Popper, achieving perfect coverage
+($tp=108$, $fn=0$, $tn=356$, $fp=0$; accuracy, precision, recall and
+$F_1$ all equal to $1.0$) in approximately 66--90\,s. No regression was
+observed on any previously-validated dataset (\texttt{family},
+\texttt{short\_family}, \texttt{trains}, \texttt{trains2}, \texttt{zendo},
+\texttt{zendo1}), each of which continues to report identical hypotheses,
+accuracy and running time to those measured prior to this fix.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+Dataset & Accuracy / F$_1$ & Runtime \\
+\midrule
+\textsc{iggp-rps} (after fix) & 1.000 / 1.000 & $\approx$66--90\,s \\
+\textsc{iggp-rps} (before fix) & crash (\texttt{AttributeError}) & --- \\
+\bottomrule
+\end{tabular}
+\caption{Effect of the Cause 5 fix on the \textsc{iggp-rps} dataset.}
+\end{table}

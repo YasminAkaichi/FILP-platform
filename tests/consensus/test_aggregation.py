@@ -29,15 +29,15 @@ def test_two_hypotheses_strict_majority():
     result = majority_vote([h1, h2])
 
     assert result == {
-        "a": True,    # 2/2
-        "b": False,   # 1/2 -> NEG
-        "c": False,   # 1/2 -> NEG
-        "d": False,   # 0/2
+        "a": True,
+        "b": False,
+        "c": False,
+        "d": False,
     }
 
 
 def test_empty_hypothesis_is_still_a_voter():
-    learned_hypothesis = {
+    h1 = {
         "a": True,
         "b": False,
     }
@@ -48,14 +48,11 @@ def test_empty_hypothesis_is_still_a_voter():
     }
 
     result = majority_vote(
-        [
-            learned_hypothesis,
-            empty_hypothesis,
-        ]
+        [h1, empty_hypothesis]
     )
 
     assert result == {
-        "a": False,   # 1/2 -> NEG
+        "a": False,
         "b": False,
     }
 
@@ -68,6 +65,6 @@ def test_three_hypotheses():
     result = majority_vote([h1, h2, h3])
 
     assert result == {
-        "a": True,   # 2/3
-        "b": True,   # 2/3
+        "a": True,
+        "b": True,
     }

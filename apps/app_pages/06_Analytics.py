@@ -25,17 +25,17 @@ from database.connection import get_connection
 
 st.set_page_config(
     page_title="Analytics | FILP",
-    page_icon="",
+    page_icon=":material/monitoring:",
     layout="wide",
 )
 
-LOGO_PATH = PROJECT_ROOT / "assets" / "filp_logo.svg"
-
 if hasattr(st, "logo"):
     try:
-        st.logo(str(LOGO_PATH), size="large")
+        st.logo(str(PROJECT_ROOT / "assets" / "filp_wordmark_white.svg"), size="large")
     except Exception:
         pass
+
+
 
 
 # ---------------------------------------------------------------------
@@ -62,6 +62,14 @@ def inject_style() -> None:
     st.markdown(
         f"""
         <style>
+        .block-container {{
+            padding-top: 3rem;
+            padding-bottom: 3rem;
+            padding-left: 2.2rem;
+            padding-right: 2.2rem;
+            max-width: 100% !important;
+        }}
+
         div[data-testid="stVerticalBlockBorderWrapper"] {{
             border-radius: 14px !important;
         }}
@@ -102,11 +110,120 @@ def inject_style() -> None:
             color: {PALETTE["text_muted"]};
             margin-bottom: 10px;
         }}
+        .breadcrumb {{
+            font-size: 0.85rem;
+            color: {PALETTE["text_muted"]};
+            margin-bottom: 4px;
+        }}
 
         .chip-row {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px 0; }}
         .chip {{ border-radius: 999px; padding: 4px 12px; font-size: 0.8rem; font-weight: 500; }}
         .chip-neutral {{ background: {PALETTE["neutral_soft"]}; color: {PALETTE["text"]}; }}
         .chip-primary {{ background: {PALETTE["primary_soft"]}; color: {PALETTE["primary"]}; }}
+
+        /* --------------------------------------------------------- */
+        /* Dark navy sidebar, matching the Experiments page          */
+        /* --------------------------------------------------------- */
+
+        section[data-testid="stSidebar"] {{
+            background: #0F1B33 !important;
+            border-right: 1px solid #22314F;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {{
+            height: auto !important;
+            min-height: 0 !important;
+            margin-bottom: 4px !important;
+            padding-top: 6px !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
+        section[data-testid="stSidebar"] [data-testid="stLogo"] {{
+            height: 76px !important;
+            max-height: none !important;
+            width: auto !important;
+            max-width: 100% !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNavSeparator"] {{
+            display: none !important;
+        }}
+        section[data-testid="stSidebar"] > div:first-child {{
+            min-height: 100vh !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }}
+        [data-testid="stSidebarNav"] {{
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+        }}
+        [data-testid="stSidebarNavItems"] {{
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+        }}
+        [data-testid="stSidebarNavItems"] li:nth-last-of-type(2) {{
+            margin-top: auto !important;
+            padding-top: 303px;
+            border-top: 1px solid #22314F;
+        }}
+        section[data-testid="stSidebar"] * {{
+            color: #C7D2EC !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
+            border-radius: 10px;
+            margin: 2px 8px 2px 0 !important;
+            padding: 8px 8px 8px 4px !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:first-child {{
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            flex-shrink: 0 !important;
+            width: auto !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a [data-testid="stIconMaterial"] {{
+            width: 27px !important;
+            height: 27px !important;
+            min-width: 27px !important;
+            font-size: 27px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            color: #E4EAFB !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:last-child {{
+            font-size: 18px !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[aria-current="page"] [data-testid="stIconMaterial"] {{
+            color: #FFFFFF !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover {{
+            background: #1B2A4C !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[aria-current="page"] {{
+            background: #1B2A4C !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[aria-current="page"] * {{
+            color: #FFFFFF !important;
+            font-weight: 600;
+        }}
+        section[data-testid="stSidebar"] hr {{
+            border-color: #22314F !important;
+        }}
+        section[data-testid="stSidebar"] .stButton button {{
+            background: {PALETTE["primary"]} !important;
+            color: #FFFFFF !important;
+            border: none !important;
+        }}
+        section[data-testid="stSidebar"] input {{
+            background: #1B2A4C !important;
+            color: #FFFFFF !important;
+            border-color: #22314F !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -228,6 +345,8 @@ def to_latex_table(display_df: pd.DataFrame, caption: str, label: str) -> str:
 # ---------------------------------------------------------------------
 
 inject_style()
+
+st.markdown('<div class="breadcrumb">Home &gt; Analytics</div>', unsafe_allow_html=True)
 
 st.title("Analytics")
 st.caption(

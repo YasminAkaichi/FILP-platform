@@ -168,19 +168,19 @@ def build_rules(settings, stats, constrainer, tester, program, before, min_claus
     if tester.check_redundant_clause(program):
         rules.update(constrainer.generalisation_constraint(program, before, min_clause))
 
-    #if len(program) > 1:
+    if len(program) > 1:
         # evaluate inconsistent sub-clauses
-    #    for rule in program:
-    #        if Clause.is_separable(rule) and tester.is_inconsistent(rule):
-    #            for x in constrainer.generalisation_constraint([rule], before, min_clause):
-    #                rules.add(x)
+        for rule in program:
+            if Clause.is_separable(rule) and tester.is_inconsistent(rule):
+                for x in constrainer.generalisation_constraint([rule], before, min_clause):
+                    rules.add(x)
 
         # eliminate totally incomplete rules
-    #    if all(Clause.is_separable(rule) for rule in program):
-    #        for rule in program:
-    #            if tester.is_totally_incomplete(rule):
-    #                for x in constrainer.redundancy_constraint([rule], before, min_clause):
-    #                    rules.add(x)
+        if all(Clause.is_separable(rule) for rule in program):
+            for rule in program:
+                if tester.is_totally_incomplete(rule):
+                    for x in constrainer.redundancy_constraint([rule], before, min_clause):
+                        rules.add(x)
 
     stats.register_rules(rules)
     

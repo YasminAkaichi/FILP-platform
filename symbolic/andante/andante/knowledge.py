@@ -23,11 +23,12 @@ from abc import ABC, abstractmethod
 
 from andante.options import Options
 from andante.logic_concepts  import (
-    Atom, 
-    Clause, 
-    Constant, 
-    Variable, 
+    Atom,
+    Clause,
+    Constant,
+    Variable,
     Function,
+    List,
 )
 from andante.collections import OrderedSet
 
@@ -160,8 +161,23 @@ class TreeShapedKnowledge(Knowledge):
                 term_dict['Vars'].add(clause)                        
             elif isinstance(term, Function):
                 if 'Funcs' not in term_dict:
-                    term_dict['Funcs'] = TreeShapedKnowledge([],[])                       
+                    term_dict['Funcs'] = TreeShapedKnowledge([],[])
                 term_dict['Funcs'].add(clause, term)
+            elif isinstance(term, List):
+                # List terms (Prolog [H|T] syntax) were never indexed
+                # here at all: this branch used to be missing entirely,
+                # so a clause with a list-typed argument (e.g.
+                # head([H|_], H):-) got no entry under this position in
+                # any bucket. match() would then build a shorter `sets`
+                # list than expected and crash calling
+                # set.intersection() with zero arguments. Treat a list
+                # argument like a wildcard/'Vars' entry: this is a safe
+                # over-approximation (any query at this position will
+                # consider the clause a candidate; real unification
+                # still filters out any that don't actually match), at
+                # the cost of losing fine-grained indexing specifically
+                # for list-shaped arguments.
+                term_dict['Vars'].add(clause)
                 
     def remove(self, clause, func=None):
         # In case input is not a clause but an iterable containing clauses
@@ -186,9 +202,11 @@ class TreeShapedKnowledge(Knowledge):
                 if not term_dict[term.value]:
                     del term_dict[term.value]
             elif isinstance(term, Variable):
-                term_dict['Vars'].remove(clause)                        
+                term_dict['Vars'].remove(clause)
             elif isinstance(term, Function):
-                term_dict['Funcs'].remove(clause, term)        
+                term_dict['Funcs'].remove(clause, term)
+            elif isinstance(term, List):
+                term_dict['Vars'].remove(clause)
                 
         if not self.clausesbyoperator[fname]:
             del self.clausesbyoperator[fname]
@@ -210,4 +228,9 @@ class TreeShapedKnowledge(Knowledge):
                 sets.append(self.clausesbyoperator[name])
             elif isinstance(term, Function):
                 sets.append(term_dict['Funcs'].match(term))
+            elif isinstance(term, List):
+                # Symmetric to the 'Vars' fallback used in add(): don't
+                # try to filter by list structure, just take every
+                # clause for this predicate as a candidate.
+                sets.append(self.clausesbyoperator[name])
         return set.intersection(*sets)

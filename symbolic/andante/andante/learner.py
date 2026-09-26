@@ -119,10 +119,55 @@ class ProgolLearner(Learner):
         
         # s: {A/Paul, B/Georges}
         # InTerms: {paul}
+        # InTerms holds (term, type_name) pairs, not bare terms. A bare
+        # set of terms cannot distinguish "the number 3 used as a
+        # state id" from "the number 3 used as a size value" — two
+        # different declared types (andante.logic_concepts.Type.name)
+        # that happen to share the same constant representation for
+        # some datasets (e.g. Zendo, where both states and numeric
+        # attributes are small integers). Without the type tag, later
+        # rounds could feed a "real"-typed constant into a "+state"
+        # input position purely because it coincidentally unifies,
+        # producing nonsensical literals such as piece(3, X) meaning
+        # "state 3 has pieces" when 3 was actually a size value.
+        # Cause 5: two DIFFERENT argument positions of this SAME head atom
+        # can be bound to constants that share a raw value but have
+        # different declared types (e.g. iggp-rps's next_score(1,p2,1):
+        # the "ex"-typed 1 and the "int"-typed 1). to_variable_name()
+        # names purely by value, so both would become the identical
+        # Variable("V1") and the head atom would end up using ONE
+        # variable in TWO unrelated slots — a self-collision that later
+        # crashes unification. We disambiguate only within this one
+        # atom's own argument list (seen_names below); a raw value
+        # shared across DIFFERENT atoms elsewhere in the clause is left
+        # untouched, since that cross-literal reuse is the intended
+        # anti-unification behavior (and, for datasets like Zendo where
+        # many small integers are reused across types, disambiguating
+        # it everywhere blows up the search space for no benefit).
+        # head_renames remembers, for every (constant, type_name) pair
+        # bound in the HEAD atom, the variable name it was given here.
+        # Body literals consult it (below) so that a value disambiguated
+        # in the head (e.g. the "int"-typed 1 renamed to V1_int to avoid
+        # colliding with the "ex"-typed 1 in the same head atom) keeps
+        # the SAME name wherever else it recurs in the clause (e.g. as
+        # my_succ's output) — otherwise the two occurrences would use
+        # different symbols and could never be recognized as the same
+        # variable, breaking the very join the clause needs.
+        seen_names = {}
+        head_renames = {}
         for v,t in theta.subst.items():
             if type_subst[v].sign=="#": s.subst[v] = t
-            else:                       s.subst[v] = Variable(t.to_variable_name())
-            if type_subst[v].sign=="+": InTerms.add(t)
+            else:
+                base = t.to_variable_name()
+                tname = type_subst[v].name
+                if base in seen_names and seen_names[base] != tname:
+                    var_name = base + '_' + tname
+                else:
+                    seen_names.setdefault(base, tname)
+                    var_name = base
+                s.subst[v] = Variable(var_name)
+                head_renames[(t, tname)] = var_name
+            if type_subst[v].sign=="+": InTerms.add((t, type_subst[v].name))
         h = s.substitute(am)
         bottom.head = h
 
@@ -130,34 +175,58 @@ class ProgolLearner(Learner):
         for i in range(self.options.i):
             next_InTerms = set()
             for modeb in M.get_modeb_from_modeh(m):
-                
-                # For every possible substitution theta of variables corresponding 
+
+                # For every possible substitution theta of variables corresponding
                 # to +type by terms from the set InTerms
                 s, am = Substitution.from_mode(modeb)
                 in_var = [v for v in s if s[v].sign=='+']
-                for skolems in itertools.product(InTerms, repeat=len(in_var)):
+                in_var_types = [s[v].name for v in in_var]
+                # Only combine InTerms entries whose declared type
+                # matches the input position they'd fill.
+                candidates_by_type = {
+                    type_name: [term for term, term_type in InTerms if term_type == type_name]
+                    for type_name in set(in_var_types)
+                }
+                for skolems in itertools.product(*(candidates_by_type[tn] for tn in in_var_types)):
                     theta = s.copy()
                     theta.subst = {v:skolem for v, skolem in zip(in_var, skolems)}
                     q = theta.substitute(am)
 
                     # Repeat a maximum of recall times
                     Theta_prime = solver.query(q, B, verbose=0)
-                    
+
                     for theta_prime in itertools.islice(Theta_prime, modeb.recall):
-                        
+
                         theta_final = s.copy()
                         theta_final.subst = dict()
-                        
+
+                        # Same Cause-5 disambiguation as above, scoped to
+                        # this single body literal's own argument list.
+                        seen_names_b = {}
                         for v, t in itertools.chain(theta.subst.items(), theta_prime.subst.items()):
                             if v not in s: continue
                             if s[v].sign=='#': theta_final.subst[v] = t
-                            else:              theta_final.subst[v] = Variable(t.to_variable_name())
-                            if s[v].sign=='-': next_InTerms.add(t)
-                        
+                            else:
+                                tname = s[v].name
+                                if (t, tname) in head_renames:
+                                    # Reuse the head's name for this exact
+                                    # (value, type) pair, so this literal
+                                    # joins correctly with the head.
+                                    var_name = head_renames[(t, tname)]
+                                else:
+                                    base = t.to_variable_name()
+                                    if base in seen_names_b and seen_names_b[base] != tname:
+                                        var_name = base + '_' + tname
+                                    else:
+                                        seen_names_b.setdefault(base, tname)
+                                        var_name = base
+                                theta_final.subst[v] = Variable(var_name)
+                            if s[v].sign=='-': next_InTerms.add((t, s[v].name))
+
                         b = theta_final.substitute(am)
                         if b not in bottom.body:
                             bottom.body.append(b)
-                        
+
             InTerms = next_InTerms
         
         return bottom
@@ -177,7 +246,7 @@ class ProgolLearner(Learner):
         self.add_eventlog('Metrics', s0.metrics_info())
         Open = OrderedSet({s0})
         Closed = OrderedSet()
-        for _ in range(100):
+        for _ in range(self.options.max_search_states):
             s = hm.best(Open)
             Open.remove(s)
             Closed.add(s)

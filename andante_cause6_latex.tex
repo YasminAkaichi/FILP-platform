@@ -1,0 +1,113 @@
+\subsection{Cause 6: Missing List and Type Unification Cases in the Substitution Engine}
+\label{sec:andante-cause6}
+
+While attempting to extend coverage to the \textsc{synthesis-sorted}
+dataset (learning a predicate over Prolog list-structured examples), two
+further, independent defects were identified in Andante's substitution
+engine (\texttt{andante/substitution.py}), both pre-existing and
+unrelated to the anti-unification issues described in
+Section~\ref{sec:andante-cause5}.
+
+\paragraph{Cause 6a: list terms were never wired into
+\texttt{Substitution.unify()}.} Andante represents Prolog list terms
+(e.g.\ \texttt{[H|T]}) with a dedicated \texttt{List} class, and this
+class implements its own \texttt{unify()} method, used by the query
+solver during proof search. However, \texttt{Substitution.unify()} --
+the separate unification routine used specifically during bottom-clause
+construction -- dispatches purely on \texttt{isinstance} checks against
+\texttt{Constant}, \texttt{Variable}, \texttt{Function} and \texttt{Type},
+and had no case at all for \texttt{List}. Consequently, any modeh or
+modeb declaration with a list-typed argument (e.g.\
+\texttt{modeh(1,f(+list))}) crashed with a \texttt{TypeError} as soon as
+a ground example list was unified against its instantiated mode atom.
+Similarly, \texttt{TreeShapedKnowledge.match()} and \texttt{.add()}
+(\texttt{andante/knowledge.py}), used to index and retrieve background
+clauses, indexed each clause argument by branching on
+\texttt{Constant}/\texttt{Variable}/\texttt{Function} only; a list-typed
+argument fell through every branch, leaving the corresponding position
+unindexed and causing \texttt{set.intersection()} to later be called with
+zero arguments -- an unrelated-looking \texttt{TypeError} whose true
+cause was this missing case.
+
+\emph{Fix.} \texttt{Substitution.unify()} was extended with explicit
+\texttt{List}-\texttt{Variable} and \texttt{List}-\texttt{List} cases; the
+latter delegates to \texttt{List.unify()} itself (reusing its already
+correct handling of partial list patterns such as \texttt{[H|T]} matched
+against a longer ground list), applying the resulting bindings directly
+to the enclosing \texttt{Substitution} rather than reimplementing the
+matching logic. \texttt{TreeShapedKnowledge.add()}, \texttt{.match()} and
+\texttt{.remove()} were extended with a \texttt{List} case that treats a
+list-typed argument as a wildcard for indexing purposes -- a safe
+over-approximation, since any clause it admits as a candidate is still
+subject to genuine unification afterward, so no false positives can
+result, at the cost of losing fine-grained indexing specifically on
+list-shaped arguments.
+
+\paragraph{Cause 6b: unifying two \texttt{Type} objects had no
+handler.} A second, independent defect was found in the same method:
+\texttt{Substitution.unify()} handles the case of a \texttt{Type}
+declaration (e.g.\ \texttt{+element}) unified against a
+\texttt{Constant}, \texttt{Function} or \texttt{Variable}, but had no
+branch for unifying two \texttt{Type} objects directly against each
+other. This situation arises naturally whenever the same variable
+appears twice as an argument of one literal under the same mode
+declaration -- for instance \texttt{geq(V,V)} generalized against
+\texttt{modeb(*,geq(+element,+element))}: the second occurrence of
+\texttt{V} unifies the \texttt{Type("+","element")} already stored for
+it against the freshly derived \texttt{Type("+","element")} for the same
+argument slot. Because no \texttt{if}/\texttt{elif} branch matched this
+case, the method fell through silently and returned \texttt{None}
+instead of raising or succeeding. This \texttt{None} was then written
+into the substitution's internal dictionary, and crashed a
+\emph{subsequent, unrelated} call the next time any entry of that same
+substitution was revisited, since \texttt{None} has no \texttt{.apply()}
+method -- making the fault appear disconnected from its true cause and
+substantially harder to trace.
+
+\emph{Fix.} An explicit \texttt{Type}-\texttt{Type} branch was added:
+if both \texttt{Type} objects agree in sign and name, unification
+succeeds trivially (returning either one); otherwise a
+\texttt{SubstitutionError} is raised, consistent with every other
+branch of the method.
+
+\paragraph{Validation.} With both fixes applied, \textsc{synthesis-sorted}
+parses and runs to completion without error (previously it failed to
+even construct a bottom clause). The resulting hypothesis search
+correctly reaches literals chaining across the list structure (e.g.\
+\texttt{head/2}, \texttt{tail/2} applied recursively), but converges to
+an empty hypothesis: the target concept (a list being fully sorted)
+requires comparing an unbounded number of consecutive element pairs,
+which is inherently recursive and cannot be expressed by a single
+non-recursive bottom clause of the kind Andante (and Progol) constructs
+from one example. This is a representational limitation of the
+formalism itself -- addressable only through predicate invention, which
+Andante does not implement -- and not a further engine defect. No
+regression was observed on any previously-validated dataset (family,
+short\_family, trains, trains2, trains1000, zendo, zendo1,
+iggp-rps), each of which continues to report identical hypotheses,
+accuracy and running time to those measured prior to this fix.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}p{3cm}p{5cm}p{5cm}@{}}
+\toprule
+Location & Symptom & Fix \\
+\midrule
+\texttt{substitution.py}, \texttt{knowledge.py} (Cause 6a) &
+List-typed mode arguments crashed bottom-clause construction with a
+\texttt{TypeError}, and background-knowledge indexing crashed with
+\texttt{set.intersection()} called on zero arguments &
+Added \texttt{List} cases to \texttt{Substitution.unify()} (delegating
+to \texttt{List.unify()}) and to \texttt{TreeShapedKnowledge}'s
+add/match/remove (treated as a safe wildcard for indexing) \\
+\addlinespace
+\texttt{substitution.py} (Cause 6b) &
+Unifying two \texttt{Type} objects (e.g.\ from a repeated variable in
+one literal) silently returned \texttt{None}, later crashing an
+unrelated substitution lookup with an \texttt{AttributeError} &
+Added an explicit \texttt{Type}-\texttt{Type} branch: succeeds if sign
+and name match, otherwise raises \texttt{SubstitutionError} \\
+\bottomrule
+\end{tabular}
+\caption{Summary of the Cause 6 fixes (list and type unification).}
+\end{table}

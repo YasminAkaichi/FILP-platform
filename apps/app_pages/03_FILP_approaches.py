@@ -24,16 +24,17 @@ LINKEDIN_URL = "https://www.linkedin.com/in/yasmine-akaichi-761975197/"
 
 st.set_page_config(
     page_title="FILP Approaches",
-    page_icon="",
+    page_icon=":material/compare_arrows:",
     layout="wide",
 )
 
-# Same fixed sidebar branding slot as every other page.
 if hasattr(st, "logo"):
     try:
-        st.logo(str(ASSETS / "filp_logo.svg"), size="large")
+        st.logo(str(ASSETS / "filp_wordmark_white.svg"), size="large")
     except Exception:
         pass
+
+
 
 
 # ---------------------------------------------------------------------
@@ -66,9 +67,11 @@ def inject_style() -> None:
         f"""
         <style>
         .block-container {{
-            padding-top: 2rem;
-            padding-bottom: 4rem;
-            max-width: 1300px;
+            padding-top: 3rem;
+            padding-bottom: 3rem;
+            padding-left: 2.2rem;
+            padding-right: 2.2rem;
+            max-width: 100% !important;
         }}
 
         div[data-testid="stVerticalBlockBorderWrapper"] {{
@@ -222,6 +225,116 @@ def inject_style() -> None:
         .coming-soon-card .badge {{ margin-bottom: 10px; }}
         .coming-soon-card h3 {{ margin: 0 0 8px 0; color: {PALETTE["text"]}; }}
         .coming-soon-card p {{ color: {PALETTE["text_muted"]}; line-height: 1.6; margin-bottom: 0; }}
+
+        .breadcrumb {{
+            font-size: 0.85rem;
+            color: {PALETTE["text_muted"]};
+            margin-bottom: 4px;
+        }}
+
+        /* --------------------------------------------------------- */
+        /* Dark navy sidebar, matching the Experiments page          */
+        /* --------------------------------------------------------- */
+
+        section[data-testid="stSidebar"] {{
+            background: #0F1B33 !important;
+            border-right: 1px solid #22314F;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {{
+            height: auto !important;
+            min-height: 0 !important;
+            margin-bottom: 4px !important;
+            padding-top: 6px !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
+        section[data-testid="stSidebar"] [data-testid="stLogo"] {{
+            height: 76px !important;
+            max-height: none !important;
+            width: auto !important;
+            max-width: 100% !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNavSeparator"] {{
+            display: none !important;
+        }}
+        section[data-testid="stSidebar"] > div:first-child {{
+            min-height: 100vh !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }}
+        [data-testid="stSidebarNav"] {{
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+        }}
+        [data-testid="stSidebarNavItems"] {{
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+        }}
+        [data-testid="stSidebarNavItems"] li:nth-last-of-type(2) {{
+            margin-top: auto !important;
+            padding-top: 303px;
+            border-top: 1px solid #22314F;
+        }}
+        section[data-testid="stSidebar"] * {{
+            color: #C7D2EC !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
+            border-radius: 10px;
+            margin: 2px 8px 2px 0 !important;
+            padding: 8px 8px 8px 4px !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:first-child {{
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            flex-shrink: 0 !important;
+            width: auto !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a [data-testid="stIconMaterial"] {{
+            width: 27px !important;
+            height: 27px !important;
+            min-width: 27px !important;
+            font-size: 27px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            color: #E4EAFB !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:last-child {{
+            font-size: 18px !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[aria-current="page"] [data-testid="stIconMaterial"] {{
+            color: #FFFFFF !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover {{
+            background: #1B2A4C !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[aria-current="page"] {{
+            background: #1B2A4C !important;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[aria-current="page"] * {{
+            color: #FFFFFF !important;
+            font-weight: 600;
+        }}
+        section[data-testid="stSidebar"] hr {{
+            border-color: #22314F !important;
+        }}
+        section[data-testid="stSidebar"] .stButton button {{
+            background: {PALETTE["primary"]} !important;
+            color: #FFFFFF !important;
+            border: none !important;
+        }}
+        section[data-testid="stSidebar"] input {{
+            background: #1B2A4C !important;
+            color: #FFFFFF !important;
+            border-color: #22314F !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -296,18 +409,12 @@ def render_coming_soon(title: str, body: str) -> None:
 
 inject_style()
 
+st.markdown('<div class="breadcrumb">Home &gt; FILP approaches</div>', unsafe_allow_html=True)
+
 st.title("FILP Research Approaches")
 st.caption(
     "Three complementary approaches to Federated Inductive Logic "
     "Programming, developed as part of my PhD thesis."
-)
-
-render_chips(
-    [
-        " Learning by Collaboration — available",
-        " Learning by Coordination — planned",
-        " Learning by Consensus — planned",
-    ]
 )
 
 st.write("")
@@ -328,42 +435,42 @@ collaboration_tab, coordination_tab, consensus_tab = st.tabs(
 with collaboration_tab:
 
     # ---------------------------------------------------------------
-    # Intro / hero
+    # Intro / hero (left) + Architecture (right), side by side
     # ---------------------------------------------------------------
 
-    st.markdown(
-        '<div class="approach-hero">'
-        + render_badge("Available now", "success")
-        + '<div class="section-title" style="font-size:1.6rem; margin-top:10px;">Learning by Collaboration</div>'
-        + "<p>FedPopper federates Popper's generate-test-constrain loop: a "
-        "central server generates candidate hypotheses and a set of clients "
-        "test them against their own local data. Clients never exchange "
-        "examples, background knowledge or gradients — only a coarse "
-        "symbolic outcome and a score reach the server.</p>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    intro_col, arch_col = st.columns([1, 1], gap="large")
 
-    render_chips(["Flower", "Popper", "Answer Set Programming", "Federated Learning", "Symbolic AI"])
+    with intro_col:
+        st.markdown(
+            '<div class="approach-hero" style="height:100%;">'
+            + '<div class="section-title" style="font-size:1.6rem; margin-top:10px;">Learning by Collaboration</div>'
+            + "<p>FedPopper federates Popper's generate-test-constrain loop: a "
+            "central server generates candidate hypotheses and a set of clients "
+            "test them against their own local data. Clients never exchange "
+            "examples, background knowledge or gradients — only a coarse "
+            "symbolic outcome and a score reach the server.</p>"
+            "<p>FedPopper is the <b>proof of practicality</b>: it plugs "
+            "straight into <b>Flower</b>, the industry-standard federated "
+            "learning framework, with a custom strategy that aggregates "
+            "symbolic ALL/SOME/NONE outcomes instead of averaging model "
+            "weights. The server talks to clients <b>directly</b>, so it "
+            "benefits from Flower's mature, production-ready ecosystem.</p>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
-    st.divider()
+        render_chips(["Flower", "Popper", "Answer Set Programming", "Federated Learning", "Symbolic AI"])
 
-    # ---------------------------------------------------------------
-    # Architecture
-    # ---------------------------------------------------------------
+    with arch_col:
+        st.markdown('<div class="section-title">Architecture</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-caption">The server never sees a client\'s data — only hypotheses go out, only outcomes come back</div>',
+            unsafe_allow_html=True,
+        )
 
-    st.markdown('<div class="section-title">Architecture</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="section-caption">The server never sees a client\'s data — only hypotheses go out, only outcomes come back</div>',
-        unsafe_allow_html=True,
-    )
+        with st.container(border=True):
+            collaboration_figure = ASSETS / "collaboration.png"
 
-    with st.container(border=True):
-        collaboration_figure = ASSETS / "collaboration.png"
-
-        figure_left, figure_center, figure_right = st.columns([1, 3, 1])
-
-        with figure_center:
             if collaboration_figure.is_file():
                 st.image(
                     str(collaboration_figure),
@@ -375,14 +482,14 @@ with collaboration_tab:
                     f"Collaboration figure not found.\n\nExpected path: `{collaboration_figure}`"
                 )
 
-    st.caption(
-        "The server holds the language bias and generates each candidate "
-        "hypothesis; it never accesses a client's dataset. Each client holds "
-        "a local partition (E+, E−, B) and tests the hypothesis locally, "
-        "returning only a symbolic outcome (ε+, ε−) and a score s = TP+TN — "
-        "never the underlying examples, background knowledge or coverage "
-        "counts."
-    )
+        st.caption(
+            "The server holds the language bias and generates each candidate "
+            "hypothesis; it never accesses a client's dataset. Each client holds "
+            "a local partition (E+, E−, B) and tests the hypothesis locally, "
+            "returning only a symbolic outcome (ε+, ε−) and a score s = TP+TN — "
+            "never the underlying examples, background knowledge or coverage "
+            "counts."
+        )
 
     st.divider()
 
@@ -463,43 +570,45 @@ with collaboration_tab:
 with coordination_tab:
 
     # ---------------------------------------------------------------
-    # Intro / hero
+    # Intro / hero (left) + Architecture (right), side by side
     # ---------------------------------------------------------------
 
-    st.markdown(
-        '<div class="approach-hero">'
-        + render_badge("Published research", "success")
-        + '<div class="section-title" style="font-size:1.6rem; margin-top:10px;">Learning by Coordination</div>'
-        + "<p>Bach4Popper coordinates the federated generate-test-constrain "
-        "loop through <b>Bach</b>, a tuple-space coordination language "
-        "developed at the Nadi Research Institute (University of Namur), "
-        "instead of direct client-server message passing. Participants "
-        "read and write to a shared coordination store rather than "
-        "exchanging point-to-point requests.</p>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    intro_col, arch_col = st.columns([1, 1], gap="large")
 
-    render_chips(["Bach", "Popper", "Tuple-space coordination", "Federated Learning", "Symbolic AI"])
+    with intro_col:
+        st.markdown(
+            '<div class="approach-hero" style="height:100%;">'
+            + '<div class="section-title" style="font-size:1.6rem; margin-top:10px;">Learning by Coordination</div>'
+            + "<p>Bach4Popper coordinates the federated generate-test-constrain "
+            "loop through <b>Bach</b>, a tuple-space coordination language "
+            "developed at the Nadi Research Institute (University of Namur), "
+            "instead of direct client-server message passing. Participants "
+            "read and write to a shared coordination store rather than "
+            "exchanging point-to-point requests.</p>"
+            "<p>Bach4Popper is the <b>proof of generality</b>: it reaches "
+            "the exact same symbolic ALL/SOME/NONE aggregation as FedPopper, "
+            "but without depending on any federated learning framework at "
+            "all. Because nothing addresses anyone directly, participants "
+            "can join or leave without the orchestrator knowing them in "
+            "advance — a coordination model better suited to unreliable, "
+            "decentralized, real-world deployments than a classic "
+            "client-server setup.</p>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
-    st.divider()
+        render_chips(["Bach", "Popper", "Tuple-space coordination", "Federated Learning", "Symbolic AI"])
 
-    # ---------------------------------------------------------------
-    # Architecture
-    # ---------------------------------------------------------------
+    with arch_col:
+        st.markdown('<div class="section-title">Architecture</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-caption">The federated server and the client testers never talk to each other directly — everything goes through the Bach store</div>',
+            unsafe_allow_html=True,
+        )
 
-    st.markdown('<div class="section-title">Architecture</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="section-caption">The federated server and the client testers never talk to each other directly — everything goes through the Bach store</div>',
-        unsafe_allow_html=True,
-    )
+        with st.container(border=True):
+            coordination_figure = ASSETS / "bach4popper-finals.png"
 
-    with st.container(border=True):
-        coordination_figure = ASSETS / "bach4popper-finals.png"
-
-        figure_left, figure_center, figure_right = st.columns([1, 3, 1])
-
-        with figure_center:
             if coordination_figure.is_file():
                 st.image(
                     str(coordination_figure),
@@ -511,13 +620,13 @@ with coordination_tab:
                     f"Coordination figure not found.\n\nExpected path: `{coordination_figure}`"
                 )
 
-    st.caption(
-        "The server never contacts a client directly, and clients never "
-        "contact each other. The server tells each candidate hypothesis H "
-        "into the store and gets the outcomes back; every client asks the "
-        "store for H, tests it against its own local data (D1…Dn), and "
-        "tells its outcome back into the store."
-    )
+        st.caption(
+            "The server never contacts a client directly, and clients never "
+            "contact each other. The server tells each candidate hypothesis H "
+            "into the store and gets the outcomes back; every client asks the "
+            "store for H, tests it against its own local data (D1…Dn), and "
+            "tells its outcome back into the store."
+        )
 
     st.divider()
 
@@ -610,17 +719,6 @@ with coordination_tab:
             "https://doi.org/10.5281/zenodo.18981901"
         )
 
-    st.divider()
-
-    st.markdown(
-        render_badge("Not yet runnable in this platform", "neutral"),
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        "The method above is published and proven — integrating it as a "
-        "runnable engine in FILP, alongside Learning by Collaboration, is "
-        "next on the roadmap."
-    )
 
 
 # ===================================================================
@@ -628,9 +726,194 @@ with coordination_tab:
 # ===================================================================
 
 with consensus_tab:
-    render_coming_soon(
-        "Learning by Consensus",
-        "This section will present the consensus-based FILP approach, "
-        "including the participating ILP learners, the voting or "
-        "aggregation mechanism and the associated experimental evaluation.",
+
+    # ---------------------------------------------------------------
+    # Intro / hero (left) + Architecture (right), side by side
+    # ---------------------------------------------------------------
+
+    intro_col, arch_col = st.columns([1, 1], gap="large")
+
+    with intro_col:
+        st.markdown(
+            '<div class="approach-hero" style="height:100%;">'
+            + '<div class="section-title" style="font-size:1.6rem; margin-top:10px;">Learning by Consensus</div>'
+            + "<p>Learning by Consensus is a federated ILP approach in which "
+            "multiple clients independently learn symbolic hypotheses from "
+            "their local data. Rather than merging the learned rules into a "
+            "single global program, the hypotheses are combined at prediction "
+            "time through majority voting.</p>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        render_chips(["Popper", "Majority voting", "Ensemble", "Federated Learning", "Symbolic AI"])
+
+    with arch_col:
+        st.markdown('<div class="section-title">Architecture</div>', unsafe_allow_html=True)
+
+        with st.container(border=True):
+            consensus_figure = ASSETS / "consensus-fig.png"
+
+            if consensus_figure.is_file():
+                st.image(
+                    str(consensus_figure),
+                    caption="Learning by Consensus architecture",
+                    use_container_width=True,
+                )
+            else:
+                st.warning(
+                    f"Consensus figure not found.\n\nExpected path: `{consensus_figure}`"
+                )
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # How it works
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">How it works</div>', unsafe_allow_html=True)
+
+    st.markdown(
+        "Each client $C_i$ learns a local hypothesis $H_i$ using only its "
+        "local training partition:"
     )
+    st.latex(r"D_i \longrightarrow H_i")
+
+    st.markdown("The learned hypotheses are then collected to form an ensemble:")
+    st.latex(r"\mathcal{H} = \{H_1, H_2, \ldots, H_K\}")
+
+    st.markdown(
+        "For a new example $e$, every hypothesis independently evaluates "
+        "whether the example satisfies the learned target concept:"
+    )
+    st.latex(r"H_i(e) \in \{\text{POS}, \text{NEG}\}")
+
+    st.markdown(
+        "The final prediction is determined using a strict majority vote. "
+        "For $K$ hypotheses, the required majority is:"
+    )
+    st.latex(r"M = \left\lfloor \frac{K}{2} \right\rfloor + 1")
+
+    st.markdown(
+        "The consensus predicts **POS** when at least $M$ hypotheses vote "
+        "POS; otherwise, it predicts **NEG**."
+    )
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # Visual example
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">A visual example</div>', unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.code(
+            "Client 1 ──learns──> H1 ──> POS ┐\n"
+            "                                 │\n"
+            "Client 2 ──learns──> H2 ──> NEG ├──> Majority vote ──> POS\n"
+            "                                 │\n"
+            "Client 3 ──learns──> H3 ──> POS ┘",
+            language=None,
+        )
+        st.caption("2/3 hypotheses vote POS → Consensus prediction: **POS**")
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # What is federated?
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">What is federated?</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="approach-hero" style="background:#FFFFFF;">'
+        "<p>The clients do not jointly construct a single symbolic "
+        "hypothesis. Each client performs ILP learning locally on its own "
+        "partition and contributes its learned hypothesis to the "
+        "consensus mechanism.</p>"
+        "<p>The aggregation therefore occurs in the prediction space, "
+        "rather than by syntactically merging rules or clauses. The "
+        "global behaviour emerges from the agreement and disagreement "
+        "between independently learned hypotheses.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # How an experiment works
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">How an experiment works</div>', unsafe_allow_html=True)
+
+    exp_steps = [
+        ("Split train/test", "The original dataset is divided into a global training set and a global test set."),
+        ("Partition training data", "Only the training set is partitioned among the K clients."),
+        ("Local learning", "Each client independently learns a local hypothesis Hᵢ."),
+        ("Collect hypotheses", "The learned hypotheses are collected by the server."),
+        ("Evaluate on test set", "Every hypothesis evaluates the same global test examples."),
+        ("Majority vote", "Their predictions are aggregated using strict majority voting."),
+        ("Compute metrics", "The consensus prediction is compared with the true label to compute Accuracy, Precision, Recall and F1."),
+    ]
+
+    row_1 = st.columns(4)
+    for col, (idx, (title, body)) in zip(row_1, enumerate(exp_steps[:4], start=1)):
+        with col:
+            render_step_card(idx, title, body)
+
+    row_2 = st.columns(4)
+    for col, (idx, (title, body)) in zip(row_2, enumerate(exp_steps[4:], start=5)):
+        with col:
+            render_step_card(idx, title, body)
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # Understanding a consensus decision
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">Understanding a consensus decision</div>', unsafe_allow_html=True)
+    st.markdown(
+        "Consensus does not hide the individual symbolic decisions behind "
+        "the final prediction. For each test example, the platform "
+        "reports the vote produced by every learned hypothesis."
+    )
+
+    with st.container(border=True):
+        st.code(
+            "Example 28\n\n"
+            "True label: NEG\n\n"
+            "H1 → NEG\n"
+            "H2 → POS\n"
+            "H3 → NEG\n\n"
+            "Positive votes:      1 / 3\n"
+            "Required majority:   2\n\n"
+            "Consensus: NEG ✓",
+            language=None,
+        )
+
+    st.caption(
+        "This makes it possible to inspect not only whether the consensus "
+        "is correct, but also how much the locally learned hypotheses "
+        "agree or disagree on a prediction."
+    )
+
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # Research paper
+    # ---------------------------------------------------------------
+
+    st.markdown('<div class="section-title">📄 Related publication</div>', unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.markdown(
+            "**Akaichi, Y., Jacquet, J.-M., Linden, I., & Vanhoof, W. (2025).** "
+            "[*Federated Inductive Logic Programming for Explainable "
+            "Artificial Intelligence.*]"
+            "(https://ceur-ws.org/Vol-4059/paper1.pdf) "
+            "In Proceedings of the Second Workshop on Explainable "
+            "Artificial Intelligence for the Medical Domain (EXPLIMED "
+            "2025), CEUR Workshop Proceedings, Vol. 4059, Bologna, Italy."
+        )

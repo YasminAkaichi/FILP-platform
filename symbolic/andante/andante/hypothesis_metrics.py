@@ -180,11 +180,15 @@ class FnMetric(HypothesisMetric):
         def __hash__(self): return hash(self.str_id)
         def __eq__(self, other): return self.str_id==other.str_id
 
-    def best(self, collec, key=lambda s: (s.f, s.n)):
+    def best(self, collec, key=lambda s: (s.f, -s.n)):
+        # Tie-break on f by preferring FEWER covered negatives (lower n),
+        # not more. The original `(s.f, s.n)` key made max() pick the
+        # candidate with the *most* false positives among equal-f ties,
+        # which is backwards for a metric meant to avoid false positives.
         return max([s for s in collec if s.c<=self.options.c], key=key)
 
     def prune(self, state):
-        if (state.n==0 and state.f>0) or state.g<=0 or state.c>self.options.c:
+        if (state.n==0 and state.f>0) or state.g<0 or state.c>self.options.c:
             return True
         else: return False
 

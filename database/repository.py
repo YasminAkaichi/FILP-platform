@@ -180,7 +180,46 @@ class ExperimentRepository:
             )
 
             conn.commit()
-    
+
+    def save_client_dataset_info(
+        self,
+        experiment_id: int,
+        client_id: int,
+        dataset_partition: str,
+        number_of_examples: int,
+        number_of_positive_examples: int,
+        number_of_negative_examples: int,
+    ) -> None:
+        """Lightweight counterpart to save_client_result, for approaches
+        like Consensus where clients don't report federated evaluation
+        metrics (epsilon outcomes, acceptance, TP/FN/TN/FP) but their
+        local dataset partition should still be browsable in the UI."""
+
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO client_results (
+                    experiment_id,
+                    client_id,
+                    dataset_partition,
+                    number_of_examples,
+                    number_of_positive_examples,
+                    number_of_negative_examples
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    experiment_id,
+                    client_id,
+                    dataset_partition,
+                    number_of_examples,
+                    number_of_positive_examples,
+                    number_of_negative_examples,
+                ),
+            )
+
+            conn.commit()
+
     def save_consensus_result(
         self,
         experiment_id: int,

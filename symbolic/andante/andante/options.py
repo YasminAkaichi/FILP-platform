@@ -40,6 +40,11 @@ class Options(object):
     learner = "ProgolLearner"
     hmetric = "FnMetric"
     update_knowledge = True
+    # Maximum number of states explored by ProgolLearner.build_hypothesis
+    # per clause (was a hardcoded 100 inside the method). Settable per
+    # dataset via `set(max_search_states, N).`; the default of 100
+    # preserves prior behavior for existing datasets/options.
+    max_search_states = 100
     
     logging = False
     

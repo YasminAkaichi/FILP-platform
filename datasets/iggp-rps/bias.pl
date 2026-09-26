@@ -18,7 +18,7 @@
 %% Test_Individual_Rules.Is_Totally_Incomplete:
 %%     Called: 1539 times   Total: 0.05     Mean: 0.000     Max: 0.001
 %% Total operation time: 17.96s
-%% Total execution time: 18.08s
+%% Total execution time: 18.08s max_vars(7).
 
 max_clauses(4).
 max_vars(5).
