@@ -21,6 +21,9 @@ class BenchmarkSummary:
     total_time: MetricSummary
     startup_time: MetricSummary
     learning_time: MetricSummary
+    popper_core_time: MetricSummary
+    client_eval_time: MetricSummary
+    evaluate_phase_time: MetricSummary
     popper_time: MetricSummary
     federation_time: MetricSummary
     federation_ratio: MetricSummary
@@ -134,6 +137,7 @@ def load_benchmark_summary(
         rows = connection.execute(
             """
             SELECT
+                sr.experiment_id,
                 sr.total_time_seconds,
                 sr.startup_time_seconds,
                 sr.learning_time_seconds,
@@ -142,10 +146,21 @@ def load_benchmark_summary(
                 sr.federation_ratio,
                 sr.final_score,
                 sr.number_of_rounds,
-                sr.number_of_programs
+                sr.number_of_programs,
+                COALESCE(ce.client_eval_wall, 0.0) AS client_eval_wall,
+                COALESCE(ce.evaluate_phase_wall, 0.0) AS evaluate_phase_wall
             FROM benchmark_runs AS br
             JOIN server_results AS sr
                 ON sr.experiment_id = br.experiment_id
+            LEFT JOIN (
+                SELECT
+                    experiment_id,
+                    MAX(total_eval_wall_seconds) AS client_eval_wall,
+                    MAX(total_evaluate_phase_wall_seconds) AS evaluate_phase_wall
+                FROM client_results
+                GROUP BY experiment_id
+            ) AS ce
+                ON ce.experiment_id = sr.experiment_id
             WHERE br.benchmark_id = ?
             ORDER BY br.run_number
             """,
@@ -156,6 +171,63 @@ def load_benchmark_summary(
         raise ValueError(
             f"No completed benchmark results found for benchmark {benchmark_id}."
         )
+
+    # `popper_time_seconds` (tCentralPopper) is timed strictly around the
+    # server's own build/ground/add work between federated rounds, and
+    # `federation_time_seconds` (tFedPopper) around `_send_and_wait`, i.e.
+    # the whole round-trip during which each client evaluates the proposed
+    # program against its local examples (see engines/collaboration/
+    # strategy/fedpopper.py and engines/collaboration/client.py). That
+    # client-side coverage testing is genuine Popper work, not federation
+    # overhead — it's just been offloaded to the clients — so it's added
+    # back into "Popper core" here and subtracted out of "federation" to
+    # get a fair split between real search cost and pure communication/
+    # aggregation overhead. Centralized/consensus runs have no
+    # client_results rows, so client_eval_wall is 0 and both values are
+    # unchanged from the raw server-side timers.
+    #
+    # MAX, not SUM, across clients: clients evaluate a given hypothesis
+    # in parallel (separate processes/threads dispatched together each
+    # round), so the server's wall-clock federation timer is bounded by
+    # whichever client was slowest that round, not by the total compute
+    # summed across all of them. Summing would subtract roughly
+    # (number_of_clients)x too much from the raw federation time,
+    # driving it toward — or below, silently clipped at — zero.
+    #
+    # evaluate_phase_wall: because fraction_evaluate=1.0, Flower runs a
+    # SECOND, separate phase every round (configure_evaluate ->
+    # client.evaluate()) that re-runs tester.test() on the same rules
+    # fit() already tested. That call used to be completely untimed and
+    # silently inflated "federation overhead" — on a search-heavy
+    # dataset (trains1000) it accounted for roughly 60% of what looked
+    # like pure communication cost. It's now measured directly
+    # (total_evaluate_phase_wall_seconds) and subtracted out here too,
+    # the same way client_eval_wall is.
+    raw_popper_times: list[float] = []
+    client_eval_times: list[float] = []
+    evaluate_phase_times: list[float] = []
+    true_popper_times: list[float] = []
+    true_federation_times: list[float] = []
+    true_federation_ratios: list[float] = []
+
+    for row in rows:
+        client_eval = float(row["client_eval_wall"] or 0.0)
+        evaluate_phase = float(row["evaluate_phase_wall"] or 0.0)
+        raw_popper = float(row["popper_time_seconds"] or 0.0)
+        raw_federation = float(row["federation_time_seconds"] or 0.0)
+        total_time = float(row["total_time_seconds"] or 0.0)
+
+        true_popper = raw_popper + client_eval
+        true_federation = max(
+            raw_federation - client_eval - evaluate_phase, 0.0
+        )
+
+        raw_popper_times.append(raw_popper)
+        client_eval_times.append(client_eval)
+        evaluate_phase_times.append(evaluate_phase)
+        true_popper_times.append(true_popper)
+        true_federation_times.append(true_federation)
+        true_federation_ratios.append(true_federation / total_time if total_time > 0 else 0.0)
 
     return BenchmarkSummary(
         benchmark_id=benchmark_id,
@@ -175,15 +247,12 @@ def load_benchmark_summary(
                 for row in rows
             ]
         ),
-        popper_time=_summarize(
-            [float(row["popper_time_seconds"] or 0.0) for row in rows]
-        ),
-        federation_time=_summarize(
-            [float(row["federation_time_seconds"] or 0.0) for row in rows]
-        ),
-        federation_ratio=_summarize(
-            [float(row["federation_ratio"] or 0.0) for row in rows]
-        ),
+        popper_core_time=_summarize(raw_popper_times),
+        client_eval_time=_summarize(client_eval_times),
+        evaluate_phase_time=_summarize(evaluate_phase_times),
+        popper_time=_summarize(true_popper_times),
+        federation_time=_summarize(true_federation_times),
+        federation_ratio=_summarize(true_federation_ratios),
         final_score=_summarize(
             [float(row["final_score"] or 0.0) for row in rows]
         ),

@@ -67,6 +67,14 @@ CREATE TABLE IF NOT EXISTS client_results (
     average_eval_wall_seconds REAL,
     average_eval_cpu_seconds REAL,
 
+    -- Flower's federated-evaluation phase (configure_evaluate /
+    -- client.evaluate()) runs tester.test() a SECOND time on the same
+    -- rules, separately from the fit() phase above. That call was
+    -- never timed before, so its cost was silently buried inside
+    -- "federation overhead". These columns make it explicit.
+    total_evaluate_phase_wall_seconds REAL,
+    total_evaluate_phase_cpu_seconds REAL,
+
     final_epsilon_positive TEXT,
     final_epsilon_negative TEXT,
     accepted_solution INTEGER,
@@ -150,6 +158,36 @@ CREATE TABLE IF NOT EXISTS benchmark_runs (
 """
 
 
+def _migrate_existing_tables(connection) -> None:
+    """Add columns that were introduced after some databases were
+    already created. CREATE TABLE IF NOT EXISTS above only helps for
+    brand new databases; existing ones need an explicit ALTER TABLE."""
+
+    existing_columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(client_results)"
+        ).fetchall()
+    }
+
+    migrations = {
+        "total_evaluate_phase_wall_seconds": (
+            "ALTER TABLE client_results "
+            "ADD COLUMN total_evaluate_phase_wall_seconds REAL"
+        ),
+        "total_evaluate_phase_cpu_seconds": (
+            "ALTER TABLE client_results "
+            "ADD COLUMN total_evaluate_phase_cpu_seconds REAL"
+        ),
+    }
+
+    for column_name, statement in migrations.items():
+        if column_name not in existing_columns:
+            connection.execute(statement)
+
+
 def initialize_database() -> None:
     with get_connection() as connection:
         connection.executescript(SCHEMA)
+        _migrate_existing_tables(connection)
+        connection.commit()

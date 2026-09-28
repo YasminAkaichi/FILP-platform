@@ -44,6 +44,27 @@ than or equal to the values of `min_fit_clients` and `min_evaluate_clients`.
 logging.basicConfig(level=logging.INFO)
 
 
+class EarlyStopSignal(Exception):
+    """Raised from configure_fit() once the Popper loop has finished
+    (solution found, timeout, or search exhausted) to actually break
+    out of Flower's Server.fit() round loop.
+
+    Flower's legacy fl.server.start_server() has no early-exit hook:
+    Server.fit() (flwr/server/server.py) runs a plain
+    `for current_round in range(1, num_rounds + 1):` with no check for
+    "is there anything left to do" — a strategy whose configure_fit()
+    returns [] just gets that one round silently skipped
+    ("configure_fit: no clients selected, cancel"), and the loop keeps
+    going through every remaining round (num_rounds defaults to
+    35000+ in this platform), each with FL bookkeeping/logging
+    overhead. That's genuinely wasted time between when the search
+    actually finished and when the server process reports it as done.
+    Raising here unwinds start_server() immediately; the caller
+    (engines/collaboration/server.py) catches this specific exception
+    and treats it as a normal, successful termination.
+    """
+
+
 OUTCOME_ENCODING = {"all": 1, "some": 2, "none": 3}
 OUTCOME_DECODING = {1: "all", 2: "some", 3: "none"}
 
@@ -107,7 +128,8 @@ class FedPopper(Strategy):
     fit_metrics_aggregation_fn=None,
     accept_failures: bool = False,
     with_suspension: bool = True,
-    
+    timeout_seconds: float = 600.0,
+
     ):
         super().__init__()
 
@@ -131,6 +153,7 @@ class FedPopper(Strategy):
         self.min_available_clients = min_available_clients
         self.fit_metrics_aggregation_fn = fit_metrics_aggregation_fn
         self.accept_failures = accept_failures
+        self.timeout_seconds = timeout_seconds
 
         self.best_score      = None
         self.best_hypothesis = None
@@ -200,7 +223,13 @@ class FedPopper(Strategy):
     def _popper_loop(self):
         import time
         wall_start = time.perf_counter()
-        TIMEOUT = 600
+        # Was hardcoded to 600 regardless of what the user configured —
+        # now driven by the experiment's actual timeout setting (see
+        # server.py's --timeout / self.timeout_seconds), so "run until a
+        # solution is found, or return the best hypothesis so far once
+        # the timeout hits" is genuinely true end-to-end, not just true
+        # up to an arbitrary 10-minute ceiling.
+        TIMEOUT = self.timeout_seconds
 
         #best_score = None
 
@@ -215,17 +244,34 @@ class FedPopper(Strategy):
                     # TIMEOUT
                     if time.perf_counter() - wall_start > TIMEOUT:
                         log(INFO, "TIMEOUT reached.")
+                        self._send_best_hypothesis_for_final_validation()
                         self.early_stop = True
                         self._hyp_ready.set()
                         return
 
                     # GENERATE
+                    #
+                    # This is real Popper-core search work (ASP solve to
+                    # produce the next candidate program), so it belongs
+                    # in tCentralPopper like BUILD/GROUND/ADD below. It
+                    # matters most for H0 (the very first hypothesis):
+                    # Server.fit() can't call configure_fit() — where
+                    # startup_time gets stamped — until H0 exists (see
+                    # initialize_parameters()), so on a search-heavy
+                    # dataset a slow H0 GENERATE used to get silently
+                    # counted as "startup_time" (implying network/
+                    # connection overhead) when it's actually Popper
+                    # doing real work. Timing it here and subtracting
+                    # tCentralPopper from startup_time in configure_fit()
+                    # fixes that misattribution.
+                    generate_start = self.timer()
                     with self.stats.duration('generate'):
                         model = self.solver.get_model()
                         if not model:
                             break
                         program, before, min_clause = generate_program(model)
                         self.stats.total_programs += 1
+                    self.tCentralPopper += self.timer() - generate_start
 
                     # FEDERATED TEST — envoie hypothèse, attend feedback
 
@@ -237,7 +283,24 @@ class FedPopper(Strategy):
                     start_fed = self.timer()
                     #outcome, fed_score = self._send_and_wait(program)
                     (outcome,fed_score,inconsistent_rules,totally_incomplete_rules,) = self._send_and_wait(program)
-                    self.tFedPopper += self.timer() - start_fed
+
+                    # For round 1, start_fed is stamped right after H0 is
+                    # generated — essentially at global_start — which is
+                    # *before* Flower has necessarily finished connecting
+                    # every client. If that connection wait is still
+                    # ongoing when _send_and_wait() blocks, the leftover
+                    # of it would silently get counted as federation time
+                    # instead of startup time. configure_fit() sets
+                    # self.learning_start exactly when federation for real
+                    # begins (clients sampled, ready to be sent work), and
+                    # it is guaranteed to be set by the time we get here
+                    # (it runs, in Flower's thread, before aggregate_fit
+                    # can unblock this wait). So the federation clock for
+                    # this interval never starts earlier than that.
+                    effective_start_fed = start_fed
+                    if self.learning_start is not None and self.learning_start > start_fed:
+                        effective_start_fed = self.learning_start
+                    self.tFedPopper += self.timer() - effective_start_fed
                     
                     log(INFO, f"outcome={outcome}, score={fed_score}")
 
@@ -319,8 +382,62 @@ class FedPopper(Strategy):
 
         # Recherche exhaustée
         log(INFO, "Search exhausted.")
+        self._send_best_hypothesis_for_final_validation()
         self.early_stop = True
         self._hyp_ready.set()
+
+    def _send_best_hypothesis_for_final_validation(self):
+        """
+        Called right before stopping without an exact solution (timeout
+        or exhausted search space) — never called when a solution IS
+        found, since in that case what clients just evaluated already
+        IS the returned solution.
+
+        Without this, each client's saved result (accepted_solution,
+        TP/FN/TN/FP, final_epsilon_*) reflects whatever hypothesis it
+        last happened to evaluate — which is not necessarily
+        best_hypothesis, since an earlier round can have scored higher
+        than the most recent one. That desynced client_N_result.json
+        from server_result.json: the server reports best_hypothesis as
+        the answer, but per-client acceptance stats were computed
+        against a different, earlier hypothesis.
+
+        Sending best_hypothesis one more time here — a genuine extra
+        Flower round, going through the normal fit()/aggregate_fit()
+        path on both ends — means every client actually tests and
+        reports on the exact hypothesis that ends up reported as the
+        final answer.
+        """
+        if not self.best_hypothesis:
+            return
+
+        log(
+            INFO,
+            "Sending best hypothesis to all clients for final "
+            "validation before stopping...",
+        )
+
+        start_fed = self.timer()
+        effective_start_fed = start_fed
+        if (
+            self.learning_start is not None
+            and self.learning_start > start_fed
+        ):
+            effective_start_fed = self.learning_start
+
+        (
+            outcome,
+            fed_score,
+            _inconsistent_rules,
+            _totally_incomplete_rules,
+        ) = self._send_and_wait(self.best_hypothesis)
+
+        self.tFedPopper += self.timer() - effective_start_fed
+
+        log(
+            INFO,
+            f"[Final validation] outcome={outcome}, score={fed_score}",
+        )
 
     def _send_and_wait(self, program):
         """
@@ -384,9 +501,17 @@ class FedPopper(Strategy):
     # ------------------------------------------------------------------
 
     def configure_fit(self, server_round, parameters, client_manager):
-        
+
         if self.early_stop:
-            return []
+            # Don't just return [] here — that only skips this one
+            # round and lets Flower keep looping through every
+            # remaining round up to num_rounds. Raise instead, to
+            # actually stop start_server() now. See EarlyStopSignal.
+            raise EarlyStopSignal(
+                f"Popper loop finished before round {server_round}; "
+                "stopping the Flower server now instead of coasting "
+                "through the remaining configured rounds."
+            )
         self.last_round = server_round
         available = client_manager.num_available()
         sample_size, min_num_clients = self.num_fit_clients(available)
@@ -402,8 +527,24 @@ class FedPopper(Strategy):
         if self.learning_start is None:
             now = self.timer()
 
-            self.startup_time = now - self.global_start
-            self.learning_start = now
+            # By the time round 1 reaches here, tCentralPopper already
+            # holds H0's GENERATE cost (Popper search for the first
+            # candidate — see _popper_loop). That's real Popper-core
+            # work, not connection/startup overhead, so it's subtracted
+            # out of startup_time instead of being silently folded into
+            # it (this matters most on search-heavy datasets, where H0
+            # itself can take a long time and used to look exactly like
+            # a stuck/slow connection).
+            #
+            # To keep End-to-end == Startup + Learning exactly (already
+            # relied on elsewhere), learning_start is backdated by that
+            # same amount, so the H0 generation time moves from
+            # "Startup" into "Learning" instead of disappearing from
+            # the total.
+            self.startup_time = (
+                now - self.global_start - self.tCentralPopper
+            )
+            self.learning_start = now - self.tCentralPopper
 
             print(
                 f"[Timing] All required clients ready after "

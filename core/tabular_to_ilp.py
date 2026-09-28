@@ -83,6 +83,51 @@ def is_truthy(value) -> bool:
     return str(value).strip().lower() in TRUTHY_TOKENS
 
 
+CONTINUOUS_UNIQUE_THRESHOLD = 10
+DEFAULT_THRESHOLD_QUANTILES = (0.25, 0.5, 0.75)
+
+
+def is_continuous_numeric(series: pd.Series, unique_threshold: int = CONTINUOUS_UNIQUE_THRESHOLD) -> bool:
+    """A numeric column with more distinct values than `unique_threshold`
+    is treated as continuous. Left as a `col(sample, value)` predicate,
+    almost every value is unique to one sample, so no clause can ever
+    generalize across samples (Popper/Andante can't unify two different
+    constants) — the learner silently finds nothing to learn. Binarizing
+    around a handful of quantile cut points turns it into predicates
+    that are actually shared across many samples, which is learnable.
+    """
+    if not pd.api.types.is_numeric_dtype(series):
+        return False
+    return series.dropna().nunique() > unique_threshold
+
+
+def compute_thresholds(
+    series: pd.Series, quantiles: tuple[float, ...] = DEFAULT_THRESHOLD_QUANTILES
+) -> list[float]:
+    """Cut points for binarizing a continuous column, one per quantile.
+
+    Rather than a single median split (one bit of information per
+    column), this gives the learner several candidate cut points — e.g.
+    quartiles — so it can pick whichever one actually separates the
+    classes, much like `above_clump_thickness_4/6/8` in a hand-built
+    bias file. Values are deduplicated (a low-cardinality-but-still
+    "continuous" column can have repeated quantiles) and sorted.
+    """
+    values = series.dropna()
+    cuts = sorted({round(float(values.quantile(q)), 4) for q in quantiles})
+    return cuts
+
+
+def format_threshold_for_name(value: float) -> str:
+    """Turn a numeric threshold into a valid Prolog-identifier fragment,
+    e.g. 4.5 -> "4_5", -3 -> "neg_3", 4.0 -> "4"."""
+    if float(value).is_integer():
+        text = str(int(value))
+    else:
+        text = str(value)
+    return text.replace("-", "neg_").replace(".", "_")
+
+
 @dataclass
 class ColumnPlan:
     """Describes how one feature column will be turned into a predicate."""
@@ -91,6 +136,7 @@ class ColumnPlan:
     predicate: str
     kind: str  # "boolean" or "valued"
     value_type: str = ""  # only used for "valued" columns
+    threshold: float | None = None  # set only for quantile-binarized continuous columns (>= threshold)
 
 
 @dataclass
@@ -149,6 +195,23 @@ def build_conversion_plan(
         predicate = sanitize_identifier(col, fallback="feature")
         if is_boolean_like(df[col]):
             plans.append(ColumnPlan(original_name=col, predicate=predicate, kind="boolean"))
+        elif is_continuous_numeric(df[col]):
+            # Multi-threshold binarize: above_<col>_<cut>(sample) iff
+            # value >= cut, one predicate per quantile cut point (by
+            # default quartiles). A single median split only gives the
+            # learner one candidate cut point per column; several
+            # thresholds let it pick whichever one actually separates
+            # the classes, the same idea as a hand-built bias file's
+            # above_feature_4/6/8-style predicates.
+            for cut in compute_thresholds(df[col]):
+                plans.append(
+                    ColumnPlan(
+                        original_name=col,
+                        predicate=f"above_{predicate}_{format_threshold_for_name(cut)}",
+                        kind="boolean",
+                        threshold=cut,
+                    )
+                )
         else:
             plans.append(
                 ColumnPlan(
@@ -183,20 +246,32 @@ def build_conversion_plan(
 
 def generate_feature_facts(plan: ConversionPlan, work: pd.DataFrame) -> list[str]:
     """One fact per (sample, feature) pair, following the boolean/valued
-    convention described in the module docstring."""
+    convention described in the module docstring.
+
+    Iterates each column as a pandas Series (fast, vectorized-ish) rather
+    than doing one scalar work.loc[sid, col] lookup per (row, column) —
+    for a wide table (many feature columns) the per-lookup overhead of
+    .loc adds up fast (e.g. ~17k individual lookups for a 569-row,
+    30-column table), and this function runs twice per Streamlit rerun
+    (once for the Popper preview, once for Andante), so the old version
+    could noticeably stall the UI on every widget interaction.
+    """
     facts: list[str] = []
     for col_plan in plan.feature_plans:
-        for sid in plan.sample_ids:
-            value = work.loc[sid, col_plan.original_name]
-            if isinstance(value, pd.Series):  # duplicate sample id edge case
-                value = value.iloc[0]
-            if pd.isna(value):
-                continue
-            if col_plan.kind == "boolean":
-                if is_truthy(value):
-                    facts.append(f"{col_plan.predicate}({sid}).")
+        series = work[col_plan.original_name]
+        if col_plan.kind == "boolean":
+            if col_plan.threshold is not None:
+                for sid, value in series.items():
+                    if pd.notna(value) and float(value) >= col_plan.threshold:
+                        facts.append(f"{col_plan.predicate}({sid}).")
             else:
-                facts.append(f"{col_plan.predicate}({sid}, {sanitize_atom_value(value)}).")
+                for sid, value in series.items():
+                    if pd.notna(value) and is_truthy(value):
+                        facts.append(f"{col_plan.predicate}({sid}).")
+        else:
+            for sid, value in series.items():
+                if pd.notna(value):
+                    facts.append(f"{col_plan.predicate}({sid}, {sanitize_atom_value(value)}).")
     return facts
 
 
@@ -295,13 +370,21 @@ def build_popper_dataset(
 ) -> dict[str, str]:
     background_rules = background_rules or []
 
+    # max_vars stays small on purpose: every body predicate here only
+    # ever takes the sample-id variable as input (arity 1, or arity 2 for
+    # the rare non-numeric multi-category column, whose 2nd argument is
+    # a distinct, non-shared value variable) — none of them introduce a
+    # NEW id-typed variable, so a clause never needs more than a couple
+    # of variables regardless of how many feature predicates exist. This
+    # also keeps Popper's search space from exploding as more
+    # multi-threshold predicates get generated for wide tables.
     bias_lines = [
         f"% Auto-generated from an uploaded table — {len(plan.sample_ids)} samples,",
-        f"% {len(plan.feature_plans)} feature columns, target = {plan.target_predicate}/1.",
+        f"% {len(plan.feature_plans)} feature predicates, target = {plan.target_predicate}/1.",
         "",
         "max_clauses(4).",
-        f"max_vars({min(10, len(plan.feature_plans) + 3)}).",
-        f"max_body({min(8, len(plan.feature_plans) + 2)}).",
+        "max_vars(4).",
+        "max_body(4).",
         "",
         f"head_pred({plan.target_predicate},1).",
     ]
@@ -323,6 +406,18 @@ def build_popper_dataset(
             bias_lines.append(f"direction({col_plan.predicate},(in,)).")
         else:
             bias_lines.append(f"direction({col_plan.predicate},(in,out)).")
+
+    bias_lines.append("")
+    bias_lines.append(
+        "% Every literal in a clause describes the SAME sample — without this,"
+    )
+    bias_lines.append(
+        "% Popper could combine facts about two different samples in one clause,"
+    )
+    bias_lines.append("% which is never meaningful here (each id is an independent row).")
+    bias_lines.append(":-")
+    bias_lines.append("    clause(C),")
+    bias_lines.append("    #count{V : var_type(C,V,id)} != 1.")
 
     bk_lines = [":-style_check(-discontiguous).", ""]
     bk_lines.extend(generate_feature_facts(plan, work))

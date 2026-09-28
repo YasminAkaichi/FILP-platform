@@ -164,6 +164,16 @@ class FlowerClient(fl.client.NumPyClient):
         self.num_evaluations = 0
         self.total_eval_wall = 0.0
         self.total_eval_cpu = 0.0
+
+        # Separate accounting for Flower's federated-evaluation phase
+        # (evaluate(), called once per round because fraction_evaluate=1.0),
+        # which re-runs tester.test() on the same rules fit() already
+        # tested. Previously untimed, silently counted as "federation
+        # overhead".
+        self.num_evaluate_phase_calls = 0
+        self.total_evaluate_phase_wall = 0.0
+        self.total_evaluate_phase_cpu = 0.0
+
         self.dataset_path = dataset_path
 
     def get_parameters(self, config):
@@ -319,6 +329,12 @@ class FlowerClient(fl.client.NumPyClient):
             "total_eval_cpu": float(self.total_eval_cpu),
             "average_eval_wall": float(average_wall),
             "average_eval_cpu": float(average_cpu),
+            "total_evaluate_phase_wall": float(
+                self.total_evaluate_phase_wall
+            ),
+            "total_evaluate_phase_cpu": float(
+                self.total_evaluate_phase_cpu
+            ),
             "final_epsilon_positive": self.last_epsilon_positive,
             "final_epsilon_negative": self.last_epsilon_negative,
             "accepted_solution": bool(accepted_solution),
@@ -457,6 +473,14 @@ class FlowerClient(fl.client.NumPyClient):
     def evaluate(self, parameters, config):
         """
         Evaluate the received hypothesis for Flower's evaluation phase.
+
+        NOTE: currently dormant. server.py sets fraction_evaluate=0.0,
+        so Flower's configure_evaluate() returns [] every round and this
+        method is never called — that per-round re-test measured ~60-65%
+        of Learning time on search-heavy datasets (trains1000) for no
+        functional benefit (nothing in FedPopper's search reads its
+        result). Left in place, instrumentation included, in case
+        fraction_evaluate is ever turned back on.
         """
         self.set_parameters(parameters)
 
@@ -466,11 +490,26 @@ class FlowerClient(fl.client.NumPyClient):
                 "accuracy": 0.0,
             }
 
+        eval_wall_start = time.perf_counter()
+        eval_cpu_start = time.process_time()
+
         confusion_matrix = self.tester.test(self.current_rules)
 
-        
+        eval_wall = time.perf_counter() - eval_wall_start
+        eval_cpu = time.process_time() - eval_cpu_start
+
+        self.num_evaluate_phase_calls += 1
+        self.total_evaluate_phase_wall += eval_wall
+        self.total_evaluate_phase_cpu += eval_cpu
+
+        print(
+            f"[evaluate-phase] Local eval time: wall={eval_wall:.4f}s "
+            f"cpu={eval_cpu:.4f}s",
+            flush=True,
+        )
+
         tp, fn, tn, fp = confusion_matrix
-        
+
         total = tp + fn + tn + fp
 
         accuracy = (

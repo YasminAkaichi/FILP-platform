@@ -25,9 +25,13 @@ import flwr as fl
 
 from flwr.common import parameters_to_ndarrays
 from flwr.common.logger import log
-from logging import DEBUG
+from logging import DEBUG, INFO
 
-from engines.collaboration.strategy.fedpopper import FedPopper
+from flwr.server.server import init_defaults
+from flwr.server.superlink.fleet.grpc_bidi.grpc_server import start_grpc_server
+from flwr.supercore.address import parse_address
+
+from engines.collaboration.strategy.fedpopper import FedPopper, EarlyStopSignal
 
 from popper.asp import ClingoGrounder, ClingoSolver
 from popper.constrain import Constrain
@@ -84,8 +88,25 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--rounds",
         type=int,
-        default=35000,
-        help="Maximum number of Flower rounds. Default: 35000.",
+        default=10_000_000,
+        help=(
+            "Internal safety cap on Flower rounds — not a real stopping "
+            "condition. The search actually stops when a solution is "
+            "found or --timeout is reached (see EarlyStopSignal); this "
+            "huge default just satisfies Flower's API, which requires a "
+            "finite num_rounds. Not exposed in the UI."
+        ),
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=600.0,
+        help=(
+            "Seconds the Popper search is allowed to run before it stops "
+            "and returns the best hypothesis found so far, if no exact "
+            "solution has been found yet."
+        ),
     )
 
     parser.add_argument(
@@ -291,12 +312,25 @@ def main() -> None:
         tester=tester,
         constrainer=constrainer,
         fraction_fit=1.0,
-        fraction_evaluate=1.0,
+        # Flower's separate federated-evaluation phase (configure_evaluate
+        # -> client.evaluate() -> aggregate_evaluate) re-tests the same
+        # rules a second time every round, purely to feed Flower's own
+        # History object for logging. Nothing in FedPopper reads that
+        # result — early_stop, best_hypothesis and solution_params all
+        # come from aggregate_fit() only — and the History return value
+        # of server.fit() isn't even captured anymore (see the early-stop
+        # fix above). Measured at ~60-65% of Learning time on trains1000
+        # for zero functional benefit, so it's disabled: fraction_evaluate
+        # =0.0 makes configure_evaluate() return [] immediately, and
+        # Flower's evaluate_round() then returns None without contacting
+        # any client (see flwr.server.server.Server.evaluate_round).
+        fraction_evaluate=0.0,
         min_fit_clients=args.clients,
         min_available_clients=args.clients,
-        min_evaluate_clients=args.clients,
+        min_evaluate_clients=0,
         fit_metrics_aggregation_fn=None,
         with_suspension=(args.timing_mode == "wall"),
+        timeout_seconds=args.timeout,
     )
 
     log(
@@ -304,13 +338,68 @@ def main() -> None:
         "Starting Flower server with FedPopper strategy.",
     )
 
-    fl.server.start_server(
-        server_address=args.address,
-        config=fl.server.ServerConfig(
-            num_rounds=args.rounds,
-        ),
+    # NOTE: we deliberately don't call fl.server.start_server() here.
+    # That helper calls run_fl() -> server.fit(...) with no try/except
+    # around it, so an exception raised out of the round loop (our
+    # EarlyStopSignal, used to stop Flower as soon as Popper converges
+    # instead of coasting through the remaining configured rounds)
+    # would skip BOTH server.disconnect_all_clients() and
+    # grpc_server.stop(grace=1). Without that graceful shutdown, the
+    # connected Flower clients never receive a ReconnectIns and can
+    # sit blocked on their gRPC stream for a long time (bounded only
+    # by gRPC's keepalive, ~210s) instead of exiting immediately -
+    # which is exactly what we saw freeze the launcher/UI in testing.
+    #
+    # So we inline start_server()'s logic ourselves and wrap only the
+    # round loop, keeping the graceful-shutdown calls in a `finally`.
+    parsed_address = parse_address(args.address)
+
+    if not parsed_address:
+        raise ValueError(
+            f"Server IP address ({args.address}) cannot be parsed."
+        )
+
+    host, port, is_v6 = parsed_address
+    address = f"[{host}]:{port}" if is_v6 else f"{host}:{port}"
+
+    initialized_server, initialized_config = init_defaults(
+        server=None,
+        config=fl.server.ServerConfig(num_rounds=args.rounds),
         strategy=strategy,
+        client_manager=None,
     )
+
+    grpc_server = start_grpc_server(
+        client_manager=initialized_server.client_manager(),
+        server_address=address,
+    )
+
+    try:
+        try:
+            initialized_server.fit(
+                num_rounds=initialized_config.num_rounds,
+                timeout=initialized_config.round_timeout,
+            )
+        except EarlyStopSignal as signal:
+            # Expected, not an error: the Popper loop finished and
+            # configure_fit() raised this to stop Flower immediately.
+            log(DEBUG, "Flower server stopped early: %s", signal)
+    finally:
+        # Always run Flower's normal graceful shutdown, early-stop or
+        # not, so connected clients get told to disconnect right away.
+        #
+        # IMPORTANT: don't reuse initialized_config.round_timeout here.
+        # It's None by default, and reconnect_clients() waits on
+        # concurrent.futures.wait(..., timeout=None) — with a None
+        # per-client timeout too, a single client that doesn't answer
+        # (e.g. one that already crashed) blocks this call, and thus
+        # the whole launcher/UI, forever. Use a bounded timeout so
+        # shutdown always completes even if a client is unresponsive.
+        log(INFO, "Disconnecting all clients.")
+        initialized_server.disconnect_all_clients(
+            timeout=5.0,
+        )
+        grpc_server.stop(grace=1)
 
     strategy._print_performance_summary(force=True)
 

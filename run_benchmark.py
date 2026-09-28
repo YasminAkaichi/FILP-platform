@@ -3,9 +3,9 @@ from core.benchmark_launcher import BenchmarkLauncher
 
 
 config = BenchmarkConfig(
-    name="zendo_k2_run_wall",
+    name="zendo1_k2_run_wall",
     approach="collaboration",
-    dataset="zendo",
+    dataset="zendo1",
     number_of_clients=2,
     partition_strategy="iid",
     number_of_runs=6,

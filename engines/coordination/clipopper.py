@@ -5,7 +5,10 @@
 
 import os
 import re
+import signal
 import socket
+import sys
+import time
 import traceback
 
 from popper.tester import Tester
@@ -58,6 +61,18 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         default="127.0.0.1:8000",
         help="Bach coordination store address.",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory to write client_<id>_result.json into (same "
+            "schema as the Collaboration client), so the launcher can "
+            "persist per-client results to the database. If omitted, "
+            "no file is written."
+        ),
     )
 
     return parser.parse_args()
@@ -339,6 +354,9 @@ def popper_test_hypothesis_final(
                 "0",
                 [],
                 [],
+                (0, 0, 0, 0),
+                0.0,
+                0.0,
             )
 
         print(
@@ -355,10 +373,20 @@ def popper_test_hypothesis_final(
         # Complete hypothesis evaluation
         # --------------------------------------------------
 
+        # Timed exactly like engines/collaboration/client.py's own
+        # local evaluation step (wall via perf_counter, CPU via
+        # process_time, around tester.test(...) only), so the two
+        # approaches' "Client evaluation time" are directly comparable.
+        eval_wall_start = time.perf_counter()
+        eval_cpu_start = time.process_time()
+
         with stats.duration("test"):
             confusion_matrix = tester.test(
                 rules
             )
+
+            eval_wall = time.perf_counter() - eval_wall_start
+            eval_cpu = time.process_time() - eval_cpu_start
 
             # ----------------------------------------------
             # Same clause feedback as Flower
@@ -444,6 +472,9 @@ def popper_test_hypothesis_final(
             str(score).lower(),
             inconsistent_rules,
             totally_incomplete_rules,
+            confusion_matrix,
+            eval_wall,
+            eval_cpu,
         )
 
     except Exception:
@@ -459,6 +490,9 @@ def popper_test_hypothesis_final(
             "0",
             [],
             [],
+            (0, 0, 0, 0),
+            0.0,
+            0.0,
         )
 
 
@@ -776,6 +810,116 @@ def run_client():
         store_address
     )
 
+    # Accumulators for the client-side result file (mirrors
+    # engines/collaboration/client.py's self.total_eval_wall / etc.)
+    total_eval_wall = 0.0
+    total_eval_cpu = 0.0
+    num_evaluations = 0
+    last_confusion_matrix = None
+    last_epsilon_positive = None
+    last_epsilon_negative = None
+    last_score = None
+    result_written = False
+
+    def write_result():
+        # ==================================================
+        # PERSIST RESULT (client_<id>_result.json)
+        #
+        # Mirrors engines/collaboration/client.py's
+        # save_client_result(), so core.launcher._run_coordination can
+        # read it back and save it to the database via
+        # ClientResult/repository.save_client_result exactly like the
+        # Collaboration path already does.
+        #
+        # Called both from the normal finally block AND from the
+        # SIGTERM handler below: the launcher force-terminates any
+        # Bach client still waiting after the final hypothesis (a
+        # known, expected situation — see core/launcher.py), and a
+        # plain SIGTERM kills the process before a `finally` block
+        # ever runs, which would otherwise silently lose this client's
+        # result every time that happens.
+        # ==================================================
+
+        nonlocal result_written
+
+        if result_written or not args.output_dir:
+            return
+
+        result_written = True
+
+        import json
+
+        if last_confusion_matrix is None:
+            tp = fn = tn = fp = 0
+        else:
+            tp, fn, tn, fp = last_confusion_matrix
+
+        average_wall = (
+            total_eval_wall / num_evaluations
+            if num_evaluations > 0
+            else 0.0
+        )
+
+        average_cpu = (
+            total_eval_cpu / num_evaluations
+            if num_evaluations > 0
+            else 0.0
+        )
+
+        accepted_solution = (
+            last_epsilon_positive == "all"
+            and last_epsilon_negative == "none"
+        )
+
+        result_payload = {
+            "client_id": int(client_id),
+            "dataset_partition": str(dataset_path),
+            "number_of_examples": int(
+                len(tester.pos) + len(tester.neg)
+            ),
+            "number_of_positive_examples": int(len(tester.pos)),
+            "number_of_negative_examples": int(len(tester.neg)),
+            "number_of_evaluations": int(num_evaluations),
+            "total_eval_wall": float(total_eval_wall),
+            "total_eval_cpu": float(total_eval_cpu),
+            "average_eval_wall": float(average_wall),
+            "average_eval_cpu": float(average_cpu),
+            "final_epsilon_positive": last_epsilon_positive,
+            "final_epsilon_negative": last_epsilon_negative,
+            "accepted_solution": bool(accepted_solution),
+            "final_score": float(last_score or 0),
+            "tp": int(tp),
+            "fn": int(fn),
+            "tn": int(tn),
+            "fp": int(fp),
+        }
+
+        output_dir = os.path.abspath(args.output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+
+        result_path = os.path.join(
+            output_dir,
+            f"client_{client_id}_result.json",
+        )
+
+        with open(result_path, "w", encoding="utf-8") as result_file:
+            json.dump(result_payload, result_file, indent=2)
+
+        print(
+            f"[clipopper {client_id}] Wrote client result to "
+            f"{result_path}"
+        )
+
+    def handle_sigterm(signum, frame):
+        print(
+            f"[clipopper {client_id}] Received SIGTERM — saving "
+            "result before exiting."
+        )
+        write_result()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
+
     try:
         tour = 0
 
@@ -837,11 +981,22 @@ def run_client():
                 score,
                 inconsistent_rules,
                 totally_incomplete_rules,
+                confusion_matrix,
+                eval_wall,
+                eval_cpu,
             ) = popper_test_hypothesis_final(
                 hypothesis,
                 tester,
                 stats,
             )
+
+            num_evaluations += 1
+            total_eval_wall += eval_wall
+            total_eval_cpu += eval_cpu
+            last_confusion_matrix = confusion_matrix
+            last_epsilon_positive = epsilon_positive
+            last_epsilon_negative = epsilon_negative
+            last_score = score
 
             print(
                 f"Local outcome = "
@@ -916,6 +1071,8 @@ def run_client():
         )
 
         stats.show()
+
+        write_result()
 
 
 # ======================================================

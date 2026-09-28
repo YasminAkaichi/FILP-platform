@@ -7,7 +7,11 @@ from database.repository import ExperimentRepository
 
 
 class BenchmarkLauncher:
-    def run(self, config: BenchmarkConfig) -> int:
+    def run(
+        self,
+        config: BenchmarkConfig,
+        process_tracker: dict | None = None,
+    ) -> int:
         config.validate()
 
         repository = ExperimentRepository()
@@ -51,7 +55,8 @@ class BenchmarkLauncher:
                 )
 
                 experiment_id = experiment_launcher.run(
-                    experiment_config
+                    experiment_config,
+                    process_tracker=process_tracker,
                 )
 
                 repository.add_benchmark_run(

@@ -60,7 +60,25 @@ def parse_arguments() -> argparse.Namespace:
         "--rounds",
         type=int,
         default=35000,
-        help="Maximum number of learning rounds.",
+        help=(
+            "Unused — the main loop below never checks this value "
+            "against round_id, so it was never a real stopping "
+            "condition. Kept only for CLI/launcher backward "
+            "compatibility. The real stopping conditions are: an exact "
+            "solution found, --timeout reached, or the search space "
+            "exhausted."
+        ),
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=600.0,
+        help=(
+            "Seconds the Popper search is allowed to run before it "
+            "stops and returns the best hypothesis found so far, if no "
+            "exact solution has been found yet."
+        ),
     )
 
     parser.add_argument(
@@ -68,6 +86,32 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         default="127.0.0.1:8000",
         help="Bach coordination store address.",
+    )
+
+    parser.add_argument(
+        "--timing-mode",
+        type=str,
+        choices=["wall", "cpu"],
+        default="wall",
+        help=(
+            "'wall' (default) times with time.perf_counter(), including "
+            "time spent blocked waiting on clients — comparable to the "
+            "Collaboration server and to client-side eval times. 'cpu' "
+            "times with time.process_time(), excluding waiting, which "
+            "makes learning_time/popper_time/federation_time NOT "
+            "comparable to wall-clock client evaluation time."
+        ),
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory to write server_result.json into (same schema as "
+            "the Collaboration server), so the launcher can persist "
+            "results to the database. If omitted, no file is written."
+        ),
     )
 
     return parser.parse_args()
@@ -692,6 +736,69 @@ def get_rule_feedback(
         aggregated_totally_incomplete_rules,
     )
 
+def finalize_with_best_hypothesis(
+    store,
+    best_program,
+    nb_client,
+    round_id,
+):
+    """
+    Same principle as the Collaboration side's
+    _send_best_hypothesis_for_final_validation(): when the search stops
+    without an exact solution (timeout or exhausted search space), each
+    client's own client_<id>_result.json would otherwise reflect
+    whatever hypothesis it last happened to test — not necessarily
+    best_program, since an earlier round can have scored higher than
+    the most recent one. Worse, before this fix, tell_final_hypothesis()
+    was never even called in the timeout/exhausted case, so clients
+    never learned the search had ended.
+
+    Re-running federated_test() on best_program one more time — a
+    genuine extra round, going through the exact same code path every
+    other hypothesis goes through — means every client actually tests
+    and reports on the hypothesis that ends up reported as the final
+    answer. tell_final_hypothesis() is then sent so clients stop
+    cleanly instead of blocking on a round that will never come.
+
+    Returns (rules_str, next_round_id). rules_str is None if there was
+    no best_program to validate (nothing was ever found).
+    """
+    if not best_program:
+        return None, round_id
+
+    print(
+        "\nSending best hypothesis to all clients for final "
+        "validation before stopping..."
+    )
+
+    (
+        outcome,
+        score,
+        rules_str,
+        _inconsistent_rules,
+        _totally_incomplete_rules,
+    ) = federated_test(
+        program=best_program,
+        store=store,
+        nb_client=nb_client,
+        round_id=round_id,
+    )
+
+    print(
+        f"[Final validation] outcome={outcome}, score={score}"
+    )
+
+    final_round = round_id + 1
+
+    tell_final_hypothesis(
+        store=store,
+        hypothesis=rules_str,
+        tour=final_round,
+    )
+
+    return rules_str, round_id + 1
+
+
 def tell_final_hypothesis(
     store,
     hypothesis,
@@ -893,11 +1000,18 @@ def federated_test(
 # ======================================================
 
 def run_server(
-    with_suspension=True,
+    with_suspension=None,
 ):
     tFedPopper = 0.0
     tCentralPopper = 0.0
     args = parse_arguments()
+
+    # CLI --timing-mode is the actual source of truth (mirrors
+    # engines/collaboration/server.py's with_suspension=(args.timing_mode
+    # == "wall")); the function parameter is only a fallback for direct
+    # callers that don't go through argparse.
+    if with_suspension is None:
+        with_suspension = args.timing_mode == "wall"
 
     if args.clients < 1:
         raise ValueError(
@@ -945,9 +1059,17 @@ def run_server(
         socket.SOCK_STREAM,
     )
 
+    # Mirrors "startup_time" on the Collaboration side: everything before
+    # the learning loop actually starts (here, just the socket connect —
+    # there's no client-sampling wait since Bach clients connect to the
+    # store independently, not to this server).
+    connect_start = time.perf_counter()
+
     store.connect(
         store_address
     )
+
+    startup_time = time.perf_counter() - connect_start
 
     print(
         "Connected to STORE."
@@ -959,12 +1081,15 @@ def run_server(
 
     best_score = None
     best_rules_str = None
+    best_program = None
     best_round = None
 
     round_id = 0
     found_solution = False
 
-    TIMEOUT = 600
+    # Was hardcoded to 600 regardless of what the user configured — now
+    # driven by --timeout, matching the Collaboration/Flower side.
+    TIMEOUT = args.timeout
 
     # --------------------------------------------------
     # Timer selection
@@ -1015,6 +1140,19 @@ def run_server(
                         f"\nTIMEOUT reached "
                         f"({TIMEOUT}s)"
                     )
+
+                    (
+                        validated_rules_str,
+                        round_id,
+                    ) = finalize_with_best_hypothesis(
+                        store=store,
+                        best_program=best_program,
+                        nb_client=nb_client,
+                        round_id=round_id,
+                    )
+
+                    if validated_rules_str is not None:
+                        best_rules_str = validated_rules_str
 
                     found_solution = True
 
@@ -1102,6 +1240,8 @@ def run_server(
                         rules_str
                     )
 
+                    best_program = program
+
                     best_round = round_id
 
                 # ------------------------------------------
@@ -1180,6 +1320,29 @@ def run_server(
                 )
 
                 round_id += 1
+
+        if not found_solution:
+            # Search space exhausted (every literal size tried, no
+            # exact solution) — same gap as the TIMEOUT case: without
+            # this, tell_final_hypothesis() would never be called at
+            # all here, leaving clients blocked waiting on a round that
+            # will never come.
+            print(
+                "\nSearch space exhausted — no exact solution found."
+            )
+
+            (
+                validated_rules_str,
+                round_id,
+            ) = finalize_with_best_hypothesis(
+                store=store,
+                best_program=best_program,
+                nb_client=nb_client,
+                round_id=round_id,
+            )
+
+            if validated_rules_str is not None:
+                best_rules_str = validated_rules_str
 
     finally:
 
@@ -1283,6 +1446,63 @@ def run_server(
 
     st.stats.show()
 
+    # ==================================================
+    # PERSIST RESULT (server_result.json)
+    #
+    # Mirrors engines/collaboration/server.py's output so
+    # core.launcher._run_coordination can read it back and save it to
+    # the database via ServerResult/repository.save_server_result,
+    # exactly like the Collaboration path already does.
+    #
+    # Known gap: unlike Collaboration, this server never computes
+    # tp/fn/tn/fp for the best hypothesis (no final re-evaluation step
+    # against the whole dataset exists yet) — they're written as 0
+    # rather than guessed. best_score (from federated_test's scoring)
+    # is used as final_score instead.
+    # ==================================================
+
+    if args.output_dir:
+
+        import json
+
+        output_dir = os.path.abspath(args.output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+
+        federation_ratio = (
+            tFedPopper / global_time if global_time > 0 else 0.0
+        )
+
+        result_payload = {
+            "solution": (
+                "\n".join(best_rules_str) if best_rules_str else None
+            ),
+            "solution_found": bool(best_rules_str),
+            "total_time": float(startup_time + global_time),
+            "startup_time": float(startup_time),
+            "learning_time": float(global_time),
+            "popper_time": float(tCentralPopper),
+            "federation_time": float(tFedPopper),
+            "federation_ratio": float(federation_ratio),
+            "number_of_rounds": int(round_id),
+            "number_of_programs": int(st.stats.total_programs),
+            "final_score": float(best_score) if best_score is not None else 0.0,
+            "tp": 0,
+            "fn": 0,
+            "tn": 0,
+            "fp": 0,
+        }
+
+        result_path = os.path.join(
+            output_dir, "server_result.json"
+        )
+
+        with open(result_path, "w", encoding="utf-8") as result_file:
+            json.dump(result_payload, result_file, indent=2)
+
+        print(
+            f"\n[srvpopper] Wrote server result to {result_path}"
+        )
+
 
 # ======================================================
 #  RUN
@@ -1290,10 +1510,7 @@ def run_server(
 
 if __name__ == "__main__":
 
-    # Wall-clock including waiting:
-    # run_server(with_suspension=True)
-
-    # CPU-oriented execution:
-    run_server(
-        with_suspension=False
-    )
+    # Timing mode now comes from --timing-mode (default "wall"), so it
+    # matches whatever the launcher/UI selected instead of being fixed
+    # here. Pass no override — run_server() derives it from args.
+    run_server()

@@ -13,6 +13,7 @@ env/
 .env
 *.env
 *.local
+.streamlit/secrets.toml
 
 # --- OS / editor ---
 .DS_Store

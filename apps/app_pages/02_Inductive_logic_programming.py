@@ -87,7 +87,6 @@ COLOR_EMOJI = {
 
 DATASET_BLURBS = {
     "zendo1": "Zendo scene classification — a table of geometric pieces, learn the hidden rule an arrangement must satisfy.",
-    "zendo": "Zendo scene classification (base variant).",
     "trains": "The classic Michalski trains — classify eastbound vs westbound trains from their car properties.",
     "trains1": "Michalski trains, variant 1.",
     "trains2": "Michalski trains, extended variant with more cars and attributes.",
@@ -98,7 +97,6 @@ DATASET_BLURBS = {
 
 SHORT_DATASET_BLURBS = {
     "zendo1": "Geometric scene rules",
-    "zendo": "Geometric scene rules",
     "trains": "Classic Michalski trains",
     "trains1": "Michalski trains variant",
     "trains2": "Extended trains dataset",
@@ -1625,6 +1623,85 @@ with custom_ilp_tab:
             "one column per symptom, and one column with the outcome you want to learn "
             "(a complication, a diagnosis, …)."
         )
+
+        # -------------------------------------------------------------
+        # Pre-upload guidance chat — for someone who hasn't prepared a
+        # file yet and doesn't know what format to use. Kept separate
+        # from the post-upload "Ask the AI about this data" chat below
+        # (different session_state key, different context: there's no
+        # dataset yet, just the tool's own format requirements) and only
+        # shown while no file has been uploaded, so it gets out of the
+        # way once the real per-dataset chat becomes relevant.
+        # -------------------------------------------------------------
+        try:
+            _custom_gemini_key_preupload = st.secrets.get("GEMINI_API_KEY", "")
+        except Exception:  # noqa: BLE001 — no secrets.toml at all, e.g. fresh install
+            _custom_gemini_key_preupload = ""
+
+        with st.expander("💬 Not sure what to upload? Ask the AI", expanded=False):
+            if not _custom_gemini_key_preupload:
+                st.caption(
+                    "Add a free `GEMINI_API_KEY` (aistudio.google.com/apikey) to "
+                    "`.streamlit/secrets.toml` to enable this."
+                )
+            else:
+                _preupload_chat_key = "custom_ilp_preupload_chat_history"
+                if _preupload_chat_key not in st.session_state:
+                    st.session_state[_preupload_chat_key] = []
+
+                for msg in st.session_state[_preupload_chat_key]:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+
+                _preupload_chat_input = st.chat_input(
+                    "e.g. \"I want to predict complications from patient symptoms, what should my file look like?\"",
+                    key="custom_ilp_preupload_chat_input",
+                )
+                if _preupload_chat_input:
+                    st.session_state[_preupload_chat_key].append(
+                        {"role": "user", "content": _preupload_chat_input}
+                    )
+                    with st.chat_message("user"):
+                        st.markdown(_preupload_chat_input)
+
+                    from core.llm_background import chat_reply
+
+                    with st.chat_message("assistant"):
+                        try:
+                            with st.spinner("Thinking…"):
+                                _preupload_context = (
+                                    "The user has NOT uploaded a file yet. This tool (Custom ILP, "
+                                    "on the FILP platform) turns a table into an inductive logic "
+                                    "programming (ILP) dataset for Popper or Andante. Format rules "
+                                    "to explain when relevant:\n"
+                                    "- One row per sample (e.g. one patient), one column per feature "
+                                    "(e.g. a symptom).\n"
+                                    "- A boolean-like column (yes/no, oui/non, true/false, 1/0) "
+                                    "becomes a unary predicate, e.g. fever(p3).\n"
+                                    "- A continuous numeric column (many distinct values) gets "
+                                    "automatically binarized around its median into a predicate "
+                                    "like high_age(p3) — the user doesn't need to do this "
+                                    "themselves.\n"
+                                    "- One column must be picked as the target/label to predict "
+                                    "(e.g. a diagnosis or outcome), with one or more of its values "
+                                    "marked as \"positive\".\n"
+                                    "- An optional free-text box lets the user add domain rules "
+                                    "like \"if fever and cough then flu\".\n"
+                                    "Help the user figure out which columns to include and how to "
+                                    "name/format them for their specific use case. Be concise and "
+                                    "concrete, answer in the same language the user writes in."
+                                )
+                                _preupload_reply = chat_reply(
+                                    st.session_state[_preupload_chat_key],
+                                    context=_preupload_context,
+                                    api_key=_custom_gemini_key_preupload,
+                                )
+                            st.markdown(_preupload_reply)
+                            st.session_state[_preupload_chat_key].append(
+                                {"role": "assistant", "content": _preupload_reply}
+                            )
+                        except Exception as exc:  # noqa: BLE001 — surface API errors inline, don't crash
+                            st.error(f"Chat failed: {exc}")
     else:
         try:
             if custom_file.name.lower().endswith(".csv"):
@@ -1686,6 +1763,25 @@ with custom_ilp_tab:
                 label_visibility="collapsed",
             )
 
+            try:
+                _custom_gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+            except Exception:  # noqa: BLE001 — no secrets.toml at all, e.g. fresh install
+                _custom_gemini_key = ""
+
+            custom_use_llm = st.checkbox(
+                "Use AI to parse background knowledge (more flexible phrasing, needs a free API key)",
+                value=False,
+                disabled=not _custom_gemini_key,
+                key="custom_ilp_use_llm",
+                help=(
+                    "Reads GEMINI_API_KEY from .streamlit/secrets.toml. Still validates every "
+                    "predicate the model produces against your known columns before trusting it — "
+                    "same safety net as the keyword parser."
+                    if _custom_gemini_key
+                    else "Add a free GEMINI_API_KEY (aistudio.google.com/apikey) to .streamlit/secrets.toml to enable this."
+                ),
+            )
+
             if not custom_positive_values:
                 st.warning("Pick at least one positive value for the target column to continue.")
             elif not custom_feature_columns:
@@ -1699,9 +1795,33 @@ with custom_ilp_tab:
                 )
 
                 known_predicates = [plan.target_predicate] + [cp.predicate for cp in plan.feature_plans]
-                background_rules, background_warnings = parse_background_text(
-                    custom_background_text, known_predicates
-                )
+
+                background_rules: list[str] = []
+                background_warnings: list[str] = []
+                if custom_use_llm and custom_background_text.strip():
+                    from core.llm_background import (
+                        LLMParsingUnavailable,
+                        parse_background_text_with_llm,
+                    )
+
+                    try:
+                        with st.spinner("Parsing background knowledge with AI…"):
+                            background_rules, background_warnings = parse_background_text_with_llm(
+                                custom_background_text,
+                                known_predicates,
+                                api_key=_custom_gemini_key,
+                            )
+                        st.caption("✨ Parsed with AI")
+                    except LLMParsingUnavailable as exc:
+                        st.caption(f"⚠️ AI parsing unavailable ({exc}) — falling back to keyword parsing")
+                        background_rules, background_warnings = parse_background_text(
+                            custom_background_text, known_predicates
+                        )
+                else:
+                    background_rules, background_warnings = parse_background_text(
+                        custom_background_text, known_predicates
+                    )
+
                 for warning in background_warnings:
                     st.caption(f"⚠️ {warning}")
 
@@ -1715,6 +1835,23 @@ with custom_ilp_tab:
                 popper_files = build_popper_dataset(plan, work_df, background_rules)
                 andante_text = build_andante_dataset(plan, work_df, background_rules)
 
+                # Rendering thousands of syntax-highlighted lines inside
+                # st.code() can noticeably stall the browser tab on wide
+                # tables (many feature columns => one fact per row per
+                # column). Cap what's actually rendered; the download
+                # button below always carries the full, untruncated file.
+                _PREVIEW_LINE_CAP = 400
+
+                def _preview_text(full_text: str) -> str:
+                    lines = full_text.splitlines()
+                    if len(lines) <= _PREVIEW_LINE_CAP:
+                        return full_text
+                    shown = "\n".join(lines[:_PREVIEW_LINE_CAP])
+                    return (
+                        f"{shown}\n\n% … {len(lines) - _PREVIEW_LINE_CAP} more lines — "
+                        "use the download button to get the full file"
+                    )
+
                 st.write("")
                 popper_preview_tab, andante_preview_tab = st.tabs(["Popper dataset", "Andante dataset"])
                 with popper_preview_tab:
@@ -1726,7 +1863,7 @@ with custom_ilp_tab:
                         label_visibility="collapsed",
                     )
                     with st.container(height=280, border=True):
-                        st.code(popper_files[popper_file_tab], language="prolog", line_numbers=True)
+                        st.code(_preview_text(popper_files[popper_file_tab]), language="prolog", line_numbers=True)
                     dl_cols = st.columns(3)
                     for dl_col, fname in zip(dl_cols, ["bias.pl", "bk.pl", "exs.pl"]):
                         with dl_col:
@@ -1740,7 +1877,7 @@ with custom_ilp_tab:
                             )
                 with andante_preview_tab:
                     with st.container(height=280, border=True):
-                        st.code(andante_text, language="prolog", line_numbers=True)
+                        st.code(_preview_text(andante_text), language="prolog", line_numbers=True)
                     st.download_button(
                         "⬇ Download as .pl",
                         data=andante_text,
@@ -1820,7 +1957,11 @@ with custom_ilp_tab:
                             custom_status.update(label="Run failed", state="error", expanded=True)
 
                     if custom_run_error:
-                        st.error(f"Run failed: {custom_run_error}")
+                        st.session_state["custom_ilp_result"] = {
+                            "system": custom_system,
+                            "dataset": custom_dataset_name,
+                            "error": custom_run_error,
+                        }
                     else:
                         with get_connection() as _custom_conn:
                             _custom_row = _custom_conn.execute(
@@ -1832,15 +1973,47 @@ with custom_ilp_tab:
                                 """,
                                 (custom_experiment_id,),
                             ).fetchone()
-                        custom_result = dict(_custom_row) if _custom_row else {}
+                        st.session_state["custom_ilp_result"] = {
+                            "system": custom_system,
+                            "dataset": custom_dataset_name,
+                            "error": None,
+                            **(dict(_custom_row) if _custom_row else {}),
+                        }
+                        # Chat context (below) references the current known
+                        # predicates and their meaning, kept alongside the
+                        # result so it survives into later reruns (e.g. when
+                        # the user sends a chat message, which reruns the
+                        # whole script but custom_run_clicked is False again).
+                        st.session_state["custom_ilp_predicate_glossary"] = {
+                            cp.predicate: (
+                                f"true iff {cp.original_name!r} >= {cp.threshold:.4g}"
+                                if cp.threshold is not None
+                                else (
+                                    f"true iff {cp.original_name!r} is a 'yes'-like value"
+                                    if cp.kind == "boolean"
+                                    else f"{cp.original_name!r}'s raw value"
+                                )
+                            )
+                            for cp in plan.feature_plans
+                        }
 
+                # -------------------------------------------------------
+                # Persisted result display — reads from session_state (not
+                # just inside the `if custom_run_clicked` branch) so it
+                # stays visible across reruns, e.g. while chatting below.
+                # -------------------------------------------------------
+                _stored_custom_result = st.session_state.get("custom_ilp_result")
+                if _stored_custom_result:
+                    if _stored_custom_result.get("error"):
+                        st.error(f"Run failed: {_stored_custom_result['error']}")
+                    else:
                         st.success("Run complete")
                         result_metric_cols = st.columns(4)
                         tp, fn, tn, fp = (
-                            custom_result.get("tp"),
-                            custom_result.get("fn"),
-                            custom_result.get("tn"),
-                            custom_result.get("fp"),
+                            _stored_custom_result.get("tp"),
+                            _stored_custom_result.get("fn"),
+                            _stored_custom_result.get("tn"),
+                            _stored_custom_result.get("fp"),
                         )
                         if None not in (tp, fn, tn, fp) and (tp + fn + tn + fp) > 0:
                             accuracy = (tp + tn) / (tp + fn + tn + fp)
@@ -1856,6 +2029,76 @@ with custom_ilp_tab:
                             with result_metric_cols[3]:
                                 st.metric("F1", f"{f1:.0%}")
                         st.markdown("**Learned hypothesis**")
-                        st.code(custom_result.get("solution") or "(no hypothesis found)", language="prolog")
+                        st.code(_stored_custom_result.get("solution") or "(no hypothesis found)", language="prolog")
+
+                # -------------------------------------------------------
+                # Chat with the AI about this dataset — contextualized
+                # with the current predicate glossary and the last run's
+                # result (if any), read from session_state above.
+                # -------------------------------------------------------
+                st.divider()
+                st.markdown('<div class="section-title">Ask the AI about this data</div>', unsafe_allow_html=True)
+
+                if not _custom_gemini_key:
+                    st.info(
+                        "Add a free `GEMINI_API_KEY` (aistudio.google.com/apikey) to "
+                        "`.streamlit/secrets.toml` to enable this chat.",
+                        icon="💬",
+                    )
+                else:
+                    chat_history_key = "custom_ilp_chat_history"
+                    if chat_history_key not in st.session_state:
+                        st.session_state[chat_history_key] = []
+
+                    for msg in st.session_state[chat_history_key]:
+                        with st.chat_message(msg["role"]):
+                            st.markdown(msg["content"])
+
+                    custom_chat_input = st.chat_input(
+                        "Ask about your columns, the generated predicates, or the last run…"
+                    )
+                    if custom_chat_input:
+                        st.session_state[chat_history_key].append(
+                            {"role": "user", "content": custom_chat_input}
+                        )
+                        with st.chat_message("user"):
+                            st.markdown(custom_chat_input)
+
+                        glossary = st.session_state.get("custom_ilp_predicate_glossary", {})
+                        stored_result = st.session_state.get("custom_ilp_result")
+                        context_lines = [
+                            f"The user uploaded a table with {len(plan.sample_ids)} samples.",
+                            f"Target predicate: {plan.target_predicate}/1 "
+                            f"({len(plan.positive_ids)} positive, {len(plan.negative_ids)} negative).",
+                            "Feature predicates generated from the table's columns:",
+                        ]
+                        for pred, meaning in glossary.items():
+                            context_lines.append(f"  - {pred}: {meaning}")
+                        if stored_result and not stored_result.get("error"):
+                            context_lines.append(
+                                f"Last run: {stored_result.get('system')} found hypothesis "
+                                f"`{stored_result.get('solution') or '(none)'}` "
+                                f"(tp={stored_result.get('tp')}, fn={stored_result.get('fn')}, "
+                                f"tn={stored_result.get('tn')}, fp={stored_result.get('fp')})."
+                            )
+                        elif stored_result and stored_result.get("error"):
+                            context_lines.append(f"Last run failed: {stored_result['error']}")
+
+                        from core.llm_background import chat_reply
+
+                        with st.chat_message("assistant"):
+                            try:
+                                with st.spinner("Thinking…"):
+                                    assistant_text = chat_reply(
+                                        st.session_state[chat_history_key],
+                                        context="\n".join(context_lines),
+                                        api_key=_custom_gemini_key,
+                                    )
+                                st.markdown(assistant_text)
+                                st.session_state[chat_history_key].append(
+                                    {"role": "assistant", "content": assistant_text}
+                                )
+                            except Exception as exc:  # noqa: BLE001 — surface API errors inline, don't crash
+                                st.error(f"Chat failed: {exc}")
 
 

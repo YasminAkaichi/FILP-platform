@@ -145,6 +145,8 @@ class ExperimentRepository:
                     total_eval_cpu_seconds,
                     average_eval_wall_seconds,
                     average_eval_cpu_seconds,
+                    total_evaluate_phase_wall_seconds,
+                    total_evaluate_phase_cpu_seconds,
                     final_epsilon_positive,
                     final_epsilon_negative,
                     accepted_solution,
@@ -154,7 +156,7 @@ class ExperimentRepository:
                     tn,
                     fp
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
@@ -168,6 +170,8 @@ class ExperimentRepository:
                     result.total_eval_cpu,
                     result.average_eval_wall,
                     result.average_eval_cpu,
+                    result.total_evaluate_phase_wall,
+                    result.total_evaluate_phase_cpu,
                     result.final_epsilon_positive,
                     result.final_epsilon_negative,
                     int(result.accepted_solution),

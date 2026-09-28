@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 from core.results import ClientResult, ServerResult, ConsensusResult
+import socket
 import subprocess
 import sys
 import time
@@ -19,7 +20,20 @@ DATASETS_DIR = PROJECT_ROOT / "datasets"
 
 
 class ExperimentLauncher:
-    def run(self, config: ExperimentConfig) -> int:
+    def run(
+        self,
+        config: ExperimentConfig,
+        process_tracker: dict | None = None,
+    ) -> int:
+        """
+        process_tracker: an optional dict the caller keeps a reference to.
+        As soon as this run's subprocesses (Flower/Bach server + clients)
+        exist, their list is stored at process_tracker["processes"] — the
+        SAME list object, so later appends (e.g. clients starting after
+        the server) show up automatically without the caller polling
+        again. Lets a UI running this in a background thread offer a
+        "Cancel" button that can actually kill a stuck run.
+        """
         config.validate()
 
         repository = ExperimentRepository()
@@ -33,6 +47,7 @@ class ExperimentLauncher:
                     config=config,
                     experiment_id=experiment_id,
                     repository=repository,
+                    process_tracker=process_tracker,
                 )
 
             elif config.approach == "consensus":
@@ -46,6 +61,7 @@ class ExperimentLauncher:
                     config=config,
                     experiment_id=experiment_id,
                     repository=repository,
+                    process_tracker=process_tracker,
                 )
             elif config.approach == "centralized":
                 self._run_centralized(
@@ -85,6 +101,7 @@ class ExperimentLauncher:
     config: ExperimentConfig,
     experiment_id: int,
     repository: ExperimentRepository,
+    process_tracker: dict | None = None,
 ) -> None:
         server_dataset = DATASETS_DIR / config.dataset
 
@@ -116,6 +133,11 @@ class ExperimentLauncher:
             f"{experiment_directory}"
         )
 
+        # No --rounds here on purpose: it's no longer a real stopping
+        # condition for collaboration (server.py defaults it to a huge
+        # internal safety cap). The actual principle is "run until a
+        # solution is found, or return the best hypothesis so far once
+        # --timeout is reached" — see fedpopper.py's timeout_seconds.
         server_command = [
             sys.executable,
             "-m",
@@ -124,8 +146,8 @@ class ExperimentLauncher:
             str(server_dataset),
             "--clients",
             str(config.number_of_clients),
-            "--rounds",
-            str(config.rounds),
+            "--timeout",
+            str(config.timeout),
             "--address",
             server_bind_address,
             "--output-dir",
@@ -146,6 +168,11 @@ class ExperimentLauncher:
         processes: list[subprocess.Popen] = []
         client_processes: list[subprocess.Popen] = []
 
+        if process_tracker is not None:
+            # Same list object: appends below are visible to the caller
+            # without it needing to poll this method again.
+            process_tracker["processes"] = processes
+
         try:
             print("[Launcher] Starting server...")
 
@@ -156,7 +183,10 @@ class ExperimentLauncher:
 
             processes.append(server_process)
 
-            time.sleep(2)
+            self._wait_for_server_ready(
+                config.server_address,
+                server_process,
+            )
 
             if server_process.poll() is not None:
                 raise RuntimeError(
@@ -394,6 +424,16 @@ class ExperimentLauncher:
                         client_data[
                             "average_eval_cpu"
                         ]
+                    ),
+                    total_evaluate_phase_wall=float(
+                        client_data.get(
+                            "total_evaluate_phase_wall", 0.0
+                        )
+                    ),
+                    total_evaluate_phase_cpu=float(
+                        client_data.get(
+                            "total_evaluate_phase_cpu", 0.0
+                        )
                     ),
                     final_epsilon_positive=str(
                         client_data[
@@ -793,7 +833,8 @@ class ExperimentLauncher:
     self,
     config: ExperimentConfig,
     experiment_id: int,
-    repository: ExperimentRepository,) -> None:
+    repository: ExperimentRepository,
+    process_tracker: dict | None = None,) -> None:
 
         server_dataset = (
             DATASETS_DIR
@@ -849,6 +890,9 @@ class ExperimentLauncher:
 
         processes: list[subprocess.Popen] = []
         client_processes: list[subprocess.Popen] = []
+
+        if process_tracker is not None:
+            process_tracker["processes"] = processes
 
         # --------------------------------------------------
         # Bach store
@@ -923,8 +967,17 @@ class ExperimentLauncher:
                 "--rounds",
                 str(config.rounds),
 
+                "--timeout",
+                str(config.timeout),
+
                 "--store-address",
                 "127.0.0.1:8000",
+
+                "--timing-mode",
+                config.timing_mode,
+
+                "--output-dir",
+                str(experiment_directory),
             ]
 
             server_process = subprocess.Popen(
@@ -966,6 +1019,9 @@ class ExperimentLauncher:
 
                     "--store-address",
                     "127.0.0.1:8000",
+
+                    "--output-dir",
+                    str(experiment_directory),
                 ]
 
                 print(
@@ -1046,6 +1102,165 @@ class ExperimentLauncher:
                 "\n[Launcher] Coordination experiment "
                 "completed successfully."
             )
+
+            # --------------------------------------------------
+            # Read back server_result.json and every
+            # client_<id>_result.json, and persist them — mirrors the
+            # Collaboration path above. srvpopper.py doesn't compute
+            # tp/fn/tn/fp for the server-side aggregate, so those are
+            # stored as 0 rather than guessed (see the comment in
+            # srvpopper.py where server_result.json is written); each
+            # client's own tp/fn/tn/fp (from its local confusion
+            # matrix) is real, not a placeholder.
+            # --------------------------------------------------
+
+            server_result_path = (
+                experiment_directory
+                / "server_result.json"
+            )
+
+            if not server_result_path.is_file():
+                raise FileNotFoundError(
+                    f"Server result file not found: "
+                    f"{server_result_path}"
+                )
+
+            server_data = json.loads(
+                server_result_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            server_result = ServerResult(
+                solution=server_data.get("solution"),
+                solution_found=bool(
+                    server_data.get("solution_found", False)
+                ),
+                total_time=float(server_data.get("total_time", 0.0)),
+                startup_time=float(server_data.get("startup_time", 0.0)),
+                learning_time=float(server_data.get("learning_time", 0.0)),
+                popper_time=float(server_data.get("popper_time", 0.0)),
+                federation_time=float(
+                    server_data.get("federation_time", 0.0)
+                ),
+                federation_ratio=float(
+                    server_data.get("federation_ratio", 0.0)
+                ),
+                number_of_rounds=int(
+                    server_data.get("number_of_rounds", 0)
+                ),
+                number_of_programs=int(
+                    server_data.get("number_of_programs", 0)
+                ),
+                final_score=float(server_data.get("final_score", 0.0)),
+                tp=int(server_data.get("tp", 0)),
+                fn=int(server_data.get("fn", 0)),
+                tn=int(server_data.get("tn", 0)),
+                fp=int(server_data.get("fp", 0)),
+            )
+
+            coordination_client_results: list[ClientResult] = []
+
+            for client_id in range(
+                1,
+                config.number_of_clients + 1,
+            ):
+                client_result_path = (
+                    experiment_directory
+                    / f"client_{client_id}_result.json"
+                )
+
+                if not client_result_path.is_file():
+                    # Bach clients can be waiting on the store after the
+                    # final hypothesis and get force-terminated by
+                    # _stop_processes (see the comment above, at step 5)
+                    # — clipopper.py now saves its result on SIGTERM
+                    # too, but a client that doesn't exit within the
+                    # grace period there still gets SIGKILL'd, which
+                    # can't be caught. Skip it rather than failing the
+                    # whole experiment, exactly like a hanging client
+                    # process itself doesn't fail the experiment.
+                    print(
+                        f"[Launcher] Warning: no result file for "
+                        f"coordination client {client_id} "
+                        f"({client_result_path}) — it was likely "
+                        "terminated before it could save. Skipping "
+                        "this client's result."
+                    )
+                    continue
+
+                client_data = json.loads(
+                    client_result_path.read_text(
+                        encoding="utf-8"
+                    )
+                )
+
+                coordination_client_results.append(
+                    ClientResult(
+                        client_id=int(client_data["client_id"]),
+                        dataset_partition=str(
+                            client_data["dataset_partition"]
+                        ),
+                        number_of_examples=int(
+                            client_data["number_of_examples"]
+                        ),
+                        number_of_positive_examples=int(
+                            client_data["number_of_positive_examples"]
+                        ),
+                        number_of_negative_examples=int(
+                            client_data["number_of_negative_examples"]
+                        ),
+                        number_of_evaluations=int(
+                            client_data["number_of_evaluations"]
+                        ),
+                        total_eval_wall=float(
+                            client_data["total_eval_wall"]
+                        ),
+                        total_eval_cpu=float(
+                            client_data["total_eval_cpu"]
+                        ),
+                        average_eval_wall=float(
+                            client_data["average_eval_wall"]
+                        ),
+                        average_eval_cpu=float(
+                            client_data["average_eval_cpu"]
+                        ),
+                        final_epsilon_positive=str(
+                            client_data["final_epsilon_positive"]
+                        ),
+                        final_epsilon_negative=str(
+                            client_data["final_epsilon_negative"]
+                        ),
+                        accepted_solution=bool(
+                            client_data["accepted_solution"]
+                        ),
+                        final_score=float(client_data["final_score"]),
+                        tp=int(client_data["tp"]),
+                        fn=int(client_data["fn"]),
+                        tn=int(client_data["tn"]),
+                        fp=int(client_data["fp"]),
+                    )
+                )
+
+            # all(...) on an empty list is vacuously True — guard against
+            # claiming "all accepted" when every client's result was
+            # actually skipped above.
+            all_clients_accepted = bool(coordination_client_results) and all(
+                result.accepted_solution
+                for result in coordination_client_results
+            )
+
+            repository.save_server_result(
+                experiment_id=experiment_id,
+                result=server_result,
+                all_clients_accepted=all_clients_accepted,
+            )
+
+            for client_result in coordination_client_results:
+                repository.save_client_result(
+                    experiment_id=experiment_id,
+                    result=client_result,
+                )
 
         except KeyboardInterrupt:
 
@@ -1320,6 +1535,51 @@ class ExperimentLauncher:
 
         return client_directories
 
+
+    @staticmethod
+    def _wait_for_server_ready(
+        address: str,
+        server_process: subprocess.Popen,
+        timeout: float = 30.0,
+        poll_interval: float = 0.1,
+    ) -> None:
+        """Actively probe the server's port instead of sleeping a fixed
+        amount of time before launching clients.
+
+        A fixed sleep that's occasionally too short (system load, a
+        slower import, etc.) lets a client's first connection attempt
+        race ahead of the server actually listening. Flower's own gRPC
+        client then falls into its exponential-backoff retry loop
+        (1s, 2s, 4s, 8s, 16s, capped at MAX_RETRY_DELAY=20s — see
+        flwr.supercore.retry) before it finally connects, which can
+        inflate a run's measured "startup_time" from ~2s to over a
+        minute even though the server was, in fact, ready within a
+        couple of seconds. Actively waiting for the port to accept a
+        connection removes the race instead of just widening it.
+        """
+        host, port_str = address.rsplit(":", maxsplit=1)
+        port = int(port_str)
+        deadline = time.monotonic() + timeout
+
+        while time.monotonic() < deadline:
+            if server_process.poll() is not None:
+                # Let the caller's own poll() check raise its usual
+                # "stopped during startup" error with its own message.
+                return
+
+            try:
+                with socket.create_connection(
+                    (host, port),
+                    timeout=poll_interval,
+                ):
+                    return
+            except OSError:
+                time.sleep(poll_interval)
+
+        raise RuntimeError(
+            f"Timed out after {timeout:.0f}s waiting for the "
+            f"Collaboration server to start listening on {address}."
+        )
 
     @staticmethod
     def _get_server_bind_address(

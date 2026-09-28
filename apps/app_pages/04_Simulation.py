@@ -670,6 +670,19 @@ elif current_step == 2:
                     step=30,
                     help="Safety cap on how long each client's local learner is allowed to run.",
                 )
+            elif method in ("collaboration", "coordination"):
+                st.session_state["wizard_timeout"] = st.number_input(
+                    "Timeout (seconds)",
+                    min_value=10,
+                    value=st.session_state["wizard_timeout"],
+                    step=30,
+                    help=(
+                        "The search runs until Popper finds an exact "
+                        "solution, or this timeout is reached — whichever "
+                        "comes first. If it times out, the best "
+                        "hypothesis found so far (by score) is returned."
+                    ),
+                )
             else:
                 st.session_state["wizard_rounds"] = st.number_input(
                     "Maximum rounds",
@@ -718,6 +731,8 @@ elif current_step == 3:
             review_chips.append(("Learner", st.session_state["wizard_learner"].title()))
             review_chips.append(("Timeout", f"{st.session_state['wizard_timeout']} s"))
             review_chips.append(("Test split", f"{st.session_state['wizard_test_ratio']}%"))
+        elif method in ("collaboration", "coordination"):
+            review_chips.append(("Timeout", f"{st.session_state['wizard_timeout']} s"))
         else:
             review_chips.append(("Max rounds", str(st.session_state["wizard_rounds"])))
 
@@ -792,6 +807,8 @@ elif current_step == 4:
                 ]
                 if is_consensus:
                     chips.append(("Learner", st.session_state["wizard_learner"].title()))
+                elif method in ("collaboration", "coordination"):
+                    chips.append(("Timeout", f"{st.session_state['wizard_timeout']} s"))
                 else:
                     chips.append(("Max rounds", str(st.session_state["wizard_rounds"])))
                 render_chips(chips)

@@ -1143,7 +1143,19 @@ with tab_overview:
                     {"label": "Learning time", "value": f"{fmt(summary.learning_time.mean)} s", "sub": f"± {fmt(summary.learning_time.std)} s"},
                     {"label": "Startup time", "value": f"{fmt(summary.startup_time.mean)} s", "sub": f"± {fmt(summary.startup_time.std)} s"},
                     {"label": "End-to-end time", "value": f"{fmt(summary.total_time.mean)} s", "sub": f"± {fmt(summary.total_time.std)} s"},
-                    {"label": "Popper core", "value": f"{fmt(summary.popper_time.mean)} s", "sub": f"± {fmt(summary.popper_time.std)} s"},
+                    {"label": "Total Popper time", "value": f"{fmt(summary.popper_time.mean)} s", "sub": f"± {fmt(summary.popper_time.std)} s"},
+                    {"label": "Client evaluation time", "value": f"{fmt(summary.client_eval_time.mean)} s", "sub": f"± {fmt(summary.client_eval_time.std)} s"},
+                    {"label": "Popper core (server)", "value": f"{fmt(summary.popper_core_time.mean)} s", "sub": f"± {fmt(summary.popper_core_time.std)} s"},
+                    {"label": "Federation overhead", "value": f"{fmt(summary.federation_time.mean)} s", "sub": f"± {fmt(summary.federation_time.std)} s"},
+                    # "Evaluate-phase test (duplicate)" card removed from
+                    # the grid: Flower's second per-round evaluate() phase
+                    # is now disabled (fraction_evaluate=0.0 in server.py),
+                    # so summary.evaluate_phase_time is always ~0 and the
+                    # card had nothing left to show. The underlying field,
+                    # DB columns and instrumentation are kept as-is (not
+                    # deleted) in case that phase is ever re-enabled —
+                    # just re-add this line to bring the card back:
+                    # {"label": "Evaluate-phase test (duplicate)", "value": f"{fmt(summary.evaluate_phase_time.mean)} s", "sub": f"± {fmt(summary.evaluate_phase_time.std)} s"},
                 ]
             )
 
@@ -1151,14 +1163,46 @@ with tab_overview:
                 st.markdown(
                     "- **Startup time** — spinning up the federated server and "
                     "connecting all clients before learning starts.\n"
-                    "- **Popper core** — time spent purely in Popper's "
-                    "generate-test-constrain search, excluding federation "
-                    "overhead.\n"
-                    "- **Learning time** — the full federated loop: "
-                    "broadcasting hypotheses, waiting on clients, aggregating "
-                    "feedback, and the Popper core time above.\n"
-                    "- **End-to-end time** — startup + learning, the total "
-                    "wall-clock time for the run."
+                    "- **Total Popper time** — time spent in Popper's actual "
+                    "generate-test-constrain search: **Popper core (server)** "
+                    "*plus* **Client evaluation time** below (that client-side "
+                    "coverage testing is real Popper work, even though it "
+                    "physically runs on the clients).\n"
+                    "- **Popper core (server)** — Tcentral: only the server's "
+                    "own build/ground/constrain step, excluding anything done "
+                    "by the clients.\n"
+                    "- **Client evaluation time** — the slowest client's "
+                    "total time testing the proposed programs against its "
+                    "local examples (the max across clients, not the sum: "
+                    "clients evaluate in parallel, so the server only ever "
+                    "waits on whichever one is slowest).\n"
+                    "- **Federation overhead** — pure communication/"
+                    "aggregation cost: broadcasting hypotheses to clients, "
+                    "waiting on the network, aggregating feedback — with the "
+                    "clients' own evaluation time excluded. Flower's second, "
+                    "separate per-round evaluation phase (`fraction_evaluate`)"
+                    " used to re-test every hypothesis a second time here, "
+                    "for no functional benefit (nothing in the search reads "
+                    "its result) — it's now disabled, which is why this "
+                    "number is much smaller than it used to be on "
+                    "search-heavy datasets.\n"
+                    "- **Learning time** — the full federated loop, measured "
+                    "directly end-to-end (from the moment clients are ready "
+                    "to the moment a solution is found, a timeout hits, or "
+                    "the search is exhausted). Popper core (server) now "
+                    "includes the GENERATE step for every round, so Total "
+                    "Popper time + Federation overhead should track Learning "
+                    "time closely, modulo small aggregation/bookkeeping "
+                    "gaps.\n"
+                    "- **End-to-end time** — startup + learning + a small "
+                    "amount of wrap-up (final aggregation/evaluation), the "
+                    "total wall-clock time for the run.\n\n"
+                    "Total Popper time already includes the clients' coverage-"
+                    "testing time, so it's directly comparable to a "
+                    "centralized run's Popper time. See the Analytics page's "
+                    "\"Timing breakdown by method\" section for the full "
+                    "split (client eval / Tcentral / total Popper / "
+                    "federation) across datasets."
                 )
 
         st.write("")

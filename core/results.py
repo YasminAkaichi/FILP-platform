@@ -54,6 +54,15 @@ class ClientResult:
     tn: int
     fp: int
 
+    # Flower's separate federated-evaluation phase (configure_evaluate /
+    # client.evaluate()) re-runs tester.test() on the same rules, a
+    # second time per round, independently of the fit() call above.
+    # Defaults keep this optional for engines (e.g. coordination) that
+    # don't have this second phase at all. Must stay last: dataclass
+    # fields with defaults can't precede ones without.
+    total_evaluate_phase_wall: float = 0.0
+    total_evaluate_phase_cpu: float = 0.0
+
 @dataclass
 class ConsensusResult:
     learner: str
