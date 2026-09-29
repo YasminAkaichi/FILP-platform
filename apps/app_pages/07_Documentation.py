@@ -37,6 +37,9 @@ st.markdown(
     f"""
     <style>
     .block-container {{
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
         padding-top: 3rem;
         padding-bottom: 3rem;
         padding-left: 2.2rem;
@@ -498,3 +501,9 @@ with faq_tab:
         "platform's local SQLite database, so past runs remain browsable "
         "from the Experiments page after a restart.",
     )
+
+
+st.markdown(
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    unsafe_allow_html=True,
+)

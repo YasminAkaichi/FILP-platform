@@ -1,5 +1,6 @@
 # From https://www.datacamp.com/tutorial/a-complete-guide-to-socket-programming-in-python
 
+import argparse
 import socket
 import threading
 
@@ -56,10 +57,9 @@ def handle_client(client_socket, addr):
         print(f"Connection to client ({addr[0]}:{addr[1]}) closed")
 
 
-def run_server():
+def run_server(port: int = 8000):
     server_banner()
     server_ip = "127.0.0.1"  # server hostname or IP address
-    port = 8000  # server port number
     # create a socket object
     try:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -82,10 +82,21 @@ def run_server():
         server.close()
 
 
-# To be kept as global objects         
+# To be kept as global objects
 mystore = STORE()
 myparser = Parser()
 myinterpreter = Interpreter(mystore)
 
 
-run_server()
+if __name__ == "__main__":
+    # Defaults to 8000 (the historical hardcoded value) so nothing
+    # breaks for anyone still launching this store directly, but the
+    # platform's launcher (core/launcher.py) now passes a fresh,
+    # dynamically-allocated port per experiment run instead, so two
+    # Coordination experiments running at the same time don't try to
+    # bind the same store port.
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--port", type=int, default=8000)
+    cli_args = arg_parser.parse_args()
+
+    run_server(port=cli_args.port)

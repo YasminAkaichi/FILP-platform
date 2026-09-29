@@ -67,6 +67,8 @@ PALETTE = {
     "popper_soft": "#E8F0FE",
 }
 
+NAVY = "#1B2A4C"
+
 SIZE_STYLE = {
     "Small": (PALETTE["success"], PALETTE["success_soft"]),
     "Medium": (PALETTE["warning"], PALETTE["warning_soft"]),
@@ -114,12 +116,38 @@ def inject_style() -> None:
     st.markdown(
         f"""
         <style>
+        [data-testid="stAppViewContainer"], [data-testid="stMain"], .stApp {{
+            background: #F5F6F9;
+        }}
         .block-container {{
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
             padding-top: 3rem;
             padding-bottom: 3rem;
             padding-left: 2.2rem;
             padding-right: 2.2rem;
             max-width: 100% !important;
+            background: #F5F6F9;
+        }}
+
+        div[class*="st-key-ovcard_"] {{
+            background: #FFFFFF;
+            border: 1.5px solid {PALETTE["border"]};
+            border-radius: 18px;
+            padding: 0.7rem 1.4rem 1.3rem 1.4rem;
+            height: 100%;
+        }}
+
+        div[data-testid="stHorizontalBlock"] {{
+            align-items: stretch !important;
+        }}
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
+            display: flex !important;
+        }}
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div {{
+            width: 100%;
+            height: 100%;
         }}
 
         div[data-testid="stVerticalBlockBorderWrapper"] {{
@@ -248,14 +276,91 @@ def inject_style() -> None:
         }}
 
         .rep-card {{
-            height: 100%;
-            padding: 1.1rem 1.2rem;
+            display: block !important;
+            min-height: 340px !important;
+            padding: 2rem 1.8rem 2.4rem 1.8rem !important;
+            margin-bottom: 18px !important;
             border-radius: 16px;
             border: 1.5px solid {PALETTE["border"]};
             background: #FFFFFF;
+            box-sizing: border-box;
         }}
-        .rep-card .rep-title {{ font-weight: 700; font-size: 1.0rem; margin-bottom: 4px; }}
-        .rep-card .rep-body {{ color: {PALETTE["text_muted"]}; font-size: 0.87rem; line-height: 1.5; margin-bottom: 10px; }}
+        .rep-card .rep-title {{ font-weight: 700 !important; font-size: 1.3rem !important; color: {NAVY} !important; margin-bottom: 6px; display: flex !important; align-items: center; gap: 16px; }}
+        .rep-card .rep-title span {{ font-weight: 700 !important; color: {NAVY} !important; }}
+        div[class*="st-key-ovcard_prolog"] .rep-title,
+        div[class*="st-key-ovcard_asp"] .rep-title,
+        div[class*="st-key-ovcard_systems"] .rep-title {{
+            font-weight: 700 !important; color: {NAVY} !important; display: flex !important; align-items: center !important; gap: 16px !important;
+        }}
+        div[class*="st-key-ovcard_prolog"] .rep-title span,
+        div[class*="st-key-ovcard_asp"] .rep-title span,
+        div[class*="st-key-ovcard_systems"] .rep-title span {{
+            font-weight: 700 !important; color: {NAVY} !important;
+        }}
+        div[class*="st-key-ovcard_systems"] .rep-body {{
+            margin-bottom: 20px !important;
+        }}
+        .rep-card .rep-body {{ color: {PALETTE["text_muted"]}; font-size: 1.05rem; line-height: 1.6; margin-bottom: 18px; }}
+
+        /* ----------------------------------------------------------- */
+        /* Overview landing page — feature rows, mini example boxes,   */
+        /* process steps, "why ILP" list                               */
+        /* ----------------------------------------------------------- */
+
+        .ov-card {{
+            height: 100%;
+            padding: 1.3rem 1.4rem;
+            border-radius: 18px;
+            border: 1.5px solid {PALETTE["border"]};
+            background: #FFFFFF;
+        }}
+        .ov-card-title {{ font-size: 1.3rem; font-weight: 700; color: {PALETTE["text"]}; margin-bottom: 4px; }}
+        .ov-card-sub {{ font-size: 0.95rem; color: {PALETTE["text_muted"]}; margin-bottom: 16px; line-height: 1.55; }}
+
+        .feature-row {{ display: flex; align-items: flex-start; gap: 12px; margin-bottom: 15px; }}
+        .feature-icon {{
+            flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+        }}
+        .feature-title {{ font-weight: 700; font-size: 0.98rem; color: {PALETTE["text"]}; margin-bottom: 2px; }}
+        .feature-desc {{ font-size: 0.93rem; color: {PALETTE["text_muted"]}; line-height: 1.45; white-space: normal; overflow-wrap: break-word; }}
+
+        .ex-box {{
+            border-radius: 12px;
+            padding: 10px 12px;
+            height: 100%;
+        }}
+        .ex-box-label {{ font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; }}
+        .ex-box pre {{
+            margin: 0 !important; padding: 0 !important; background: transparent !important;
+            font-size: 0.8rem !important; line-height: 1.5 !important; white-space: pre-wrap !important;
+        }}
+
+        .process-step {{
+            border-radius: 14px;
+            padding: 16px 18px;
+            height: 100%;
+            min-height: 172px;
+        }}
+        .process-step-num {{
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 50%; color: #FFFFFF;
+            font-size: 0.85rem; font-weight: 700; margin-bottom: 10px;
+        }}
+        .process-step-title {{ font-weight: 700; font-size: 1.12rem; margin-bottom: 6px; }}
+        .process-step-desc {{ font-size: 0.97rem; line-height: 1.5; opacity: 0.85; }}
+        .process-arrow {{ display: flex; align-items: center; justify-content: center; height: 100%; min-height: 172px; opacity: 0.4; }}
+
+        .why-row {{ display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }}
+        .why-row .feature-icon {{ width: 30px; height: 30px; border-radius: 8px; }}
+        .why-row span.why-text {{ font-size: 0.97rem; color: {PALETTE["text"]}; }}
+
+        .subsystem-card {{
+            border-radius: 12px; border: none !important; padding: 12px 14px; height: 100%;
+        }}
+        .subsystem-card .subsystem-title {{ font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }}
+        .subsystem-card ul {{ margin: 0; padding-left: 18px; }}
+        .subsystem-card li {{ font-size: 0.86rem; color: {PALETTE["text_muted"]}; margin-bottom: 3px; line-height: 1.45; }}
 
         /* Row-style tertiary buttons — used for the scrollable dataset
            and example lists: no button chrome, click anywhere on the
@@ -396,6 +501,86 @@ def render_metric_grid(items: list[tuple[str, str]]) -> None:
         for label, value in items
     )
     st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------
+# Overview landing page — icons, feature rows, mini example boxes
+# ---------------------------------------------------------------------
+
+_ICON_INNER = {
+    "plus_circle": '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>',
+    "minus_circle": '<circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>',
+    "database": '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+    "sliders": '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+    "search": '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+    "shield_check": '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
+    "share": '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+    "arrow_right": '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+    "check": '<polyline points="20 6 9 17 4 12"/>',
+    "book_open": '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    "play": '<polygon points="5 3 19 12 5 21 5 3"/>',
+    "check_circle": '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+    "flag": '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+    "bulb": '<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.45 1.1 1.15 1.2 1.95V16h4.8v-.25c.1-.8.6-1.5 1.2-1.95A6 6 0 0 0 12 3z"/>',
+    "code": '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+    "layers": '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+}
+
+
+def svg_icon(name: str, color: str, size: int = 20, stroke_width: float = 1.8) -> str:
+    inner = _ICON_INNER[name]
+    return (
+        f'<svg viewBox="0 0 24 24" width="{size}" height="{size}" fill="none" '
+        f'stroke="{color}" stroke-width="{stroke_width}" stroke-linecap="round" '
+        f'stroke-linejoin="round">{inner}</svg>'
+    )
+
+
+def render_feature_row(icon_name: str, color: str, bg: str, title: str, desc: str) -> str:
+    return (
+        '<div class="feature-row">'
+        f'<div class="feature-icon" style="background:{bg};">{svg_icon(icon_name, color, 18)}</div>'
+        f'<div><div class="feature-title">{title}</div><div class="feature-desc">{desc}</div></div>'
+        "</div>"
+    )
+
+
+def render_example_box(label: str, color: str, bg: str, border: str, code_text: str) -> str:
+    return (
+        f'<div class="ex-box" style="background:{bg};border:1px solid {border};">'
+        f'<div class="ex-box-label" style="color:{color};">{label}</div>'
+        f'<pre>{code_text}</pre>'
+        "</div>"
+    )
+
+
+def render_process_step(number: int, color: str, bg: str, title: str, desc: str) -> str:
+    return (
+        f'<div class="process-step" style="background:{bg};">'
+        f'<div class="process-step-num" style="background:{color};">{number}</div>'
+        f'<div class="process-step-title" style="color:{color};">{title}</div>'
+        f'<div class="process-step-desc" style="color:{color};">{desc}</div>'
+        "</div>"
+    )
+
+
+def render_why_row(icon_name: str, color: str, bg: str, text: str) -> str:
+    return (
+        '<div class="why-row">'
+        f'<div class="feature-icon" style="background:{bg};">{svg_icon(icon_name, color, 16)}</div>'
+        f'<span class="why-text">{text}</span>'
+        "</div>"
+    )
+
+
+def render_subsystem_card(title_icon: str, color: str, bg: str, border: str, title: str, items: list[str]) -> str:
+    lis = "".join(f"<li>{item}</li>" for item in items)
+    return (
+        f'<div class="subsystem-card" style="border-color:{border};background:{bg};">'
+        f'<div class="subsystem-title" style="color:{color};">{title_icon} {title}</div>'
+        f"<ul>{lis}</ul>"
+        "</div>"
+    )
 
 
 def render_balance_bar(positive: int, negative: int) -> None:
@@ -790,43 +975,15 @@ inject_style()
 
 st.markdown('<div class="breadcrumb">Home &gt; Inductive Logic Programming</div>', unsafe_allow_html=True)
 
-header_left, header_right = st.columns([1.5, 2])
+st.title("Inductive Logic Programming")
+st.markdown(
+    f'<div style="font-size:1.15rem; color:{PALETTE["text_muted"]}; margin-top:-8px; margin-bottom:6px;">'
+    "Learn interpretable logic programs from examples.</div>",
+    unsafe_allow_html=True,
+)
 
-with header_left:
-    st.title("Inductive Logic Programming")
-    st.markdown(
-        f'<div style="font-size:1.25rem; color:{PALETTE["text_muted"]}; margin-top:-6px;">'
-        "Learn logical rules from examples.</div>",
-        unsafe_allow_html=True,
-    )
-
-with header_right:
-    ICON_LIGHTBULB = (
-        f'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" '
-        f'stroke="{PALETTE["text"]}" stroke-width="1.8" stroke-linecap="round" '
-        f'stroke-linejoin="round">'
-        '<path d="M9 18h6"/><path d="M10 21h4"/>'
-        '<path d="M12 3a6 6 0 0 0-3.6 10.8c.6.45 1.1 1.15 1.2 1.95V16h4.8v-.25c.1-.8.6-1.5 1.2-1.95A6 6 0 0 0 12 3z"/>'
-        "</svg>"
-    )
-    st.markdown(
-        '<div class="ilp-banner">'
-        f'<div class="banner-icon">{ICON_LIGHTBULB}</div>'
-        '<div class="banner-body">ILP sits at the <b>intersection of Logic '
-        "Programming and Machine Learning</b>: instead of fitting weights, "
-        "it induces symbolic rules a human can read and verify. This is "
-        "what makes it a candidate for <b>Ultra-Strong Machine Learning</b> "
-        "(Michie, 1988), learning that doesn't just predict well, but "
-        "produces knowledge a human can be taught, to perform the task "
-        "better themselves.</div>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-st.write("")
-
-overview_tab, examples_tab, try_learn_tab, custom_ilp_tab = st.tabs(
-    ["Overview", "Examples", "Try & Learn", "Custom ILP"]
+overview_tab, examples_tab, language_bias_tab, try_learn_tab, custom_ilp_tab = st.tabs(
+    ["Overview", "Examples", "Language bias", "Try & Learn", "Custom ILP"]
 )
 
 
@@ -836,234 +993,322 @@ overview_tab, examples_tab, try_learn_tab, custom_ilp_tab = st.tabs(
 # =======================================================================
 
 with overview_tab:
-    st.markdown('<div class="section-title">What is logic programming?</div>', unsafe_allow_html=True)
-    st.markdown(
-        "**Logic programming** is a programming paradigm where a program "
-        "isn't a sequence of instructions but a set of logical statements, "
-        "facts and rules and a query is answered by *proving* it from "
-        "those statements, not by executing steps. Prolog is the classic "
-        "language for it; it's built from exactly three ingredients:"
-    )
+    # --- Section 1: What is ILP? + a simple worked example ---------------
 
-    lp_col_1, lp_col_2, lp_col_3 = st.columns(3)
-    with lp_col_1:
+    intro_col, example_col = st.columns([1, 1])
+
+    with intro_col:
+        with st.container(key="ovcard_whatis"):
+            st.markdown('<div class="ov-card-title">What is Inductive Logic Programming (ILP)?</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="ov-card-sub" style="white-space:normal;">Inductive Logic Programming (ILP) '
+                "is a subfield of machine learning that learns descriptive and interpretable logic "
+                "programs from examples and background knowledge.</div>",
+                unsafe_allow_html=True,
+            )
+
+            whatis_points_col, whatis_venn_col = st.columns([1.8, 1])
+
+            with whatis_points_col:
+                st.markdown(
+                    render_feature_row(
+                        "plus_circle", PALETTE["success"], PALETTE["success_soft"],
+                        "Positive examples (E⁺)",
+                        "Instances that should be entailed by the learned hypothesis.",
+                    )
+                    + render_feature_row(
+                        "minus_circle", PALETTE["error"], PALETTE["error_soft"],
+                        "Negative examples (E⁻)",
+                        "Instances that should not be entailed.",
+                    )
+                    + render_feature_row(
+                        "database", PALETTE["primary"], PALETTE["primary_soft"],
+                        "Background knowledge (B)",
+                        "Existing facts and relations that the learner can use.",
+                    )
+                    + render_feature_row(
+                        "sliders", PALETTE["progol"], PALETTE["progol_soft"],
+                        "Language bias",
+                        "Constraints on the form of the hypothesis (e.g., allowed predicates, clause length).",
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+            with whatis_venn_col:
+                VENN_BLUE = PALETTE["primary"]
+                VENN_GREEN = PALETTE["success"]
+                VENN_PURPLE = PALETTE["progol"]
+                venn_svg = f"""<svg viewBox="0 0 300 290" style="width:100%; height:auto; max-width:300px; display:block; margin:0 auto;">
+<defs><clipPath id="vennLensClip"><circle cx="195" cy="115" r="75"/></clipPath></defs>
+<circle cx="105" cy="115" r="75" fill="{VENN_BLUE}" fill-opacity="0.30"/>
+<circle cx="195" cy="115" r="75" fill="{VENN_GREEN}" fill-opacity="0.30"/>
+<circle cx="105" cy="115" r="75" fill="{VENN_PURPLE}" fill-opacity="0.55" clip-path="url(#vennLensClip)"/>
+<text x="70" y="95" text-anchor="middle" font-size="15" font-weight="700" fill="{PALETTE["text"]}"><tspan x="70" dy="0">Machine</tspan><tspan x="70" dy="18">Learning</tspan></text>
+<text x="230" y="95" text-anchor="middle" font-size="15" font-weight="700" fill="{PALETTE["text"]}"><tspan x="230" dy="0">Logic</tspan><tspan x="230" dy="18">Programming</tspan></text>
+<text x="150" y="121" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">ILP</text>
+<line x1="150" y1="195" x2="150" y2="216" stroke="{PALETTE["text_muted"]}" stroke-width="2"/>
+<polygon points="141,216 159,216 150,228" fill="{PALETTE["text_muted"]}"/>
+<rect x="15" y="240" width="270" height="36" rx="18" fill="{PALETTE["progol_soft"]}" stroke="#DCCBF5"/>
+<text x="150" y="263" text-anchor="middle" font-size="14" font-weight="700" fill="{PALETTE["progol"]}">Interpretable logic programs</text>
+</svg>"""
+                st.markdown(
+                    f'<div style="margin-top:-1.2rem; max-width:100%; overflow:hidden;">{venn_svg}</div>',
+                    unsafe_allow_html=True,
+                )
+
+    with example_col:
+        with st.container(key="ovcard_example"):
+            st.markdown('<div class="ov-card-title">A simple ILP example</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="ov-card-sub">Learning to predict <code>is_malignant</code> from breast mass '
+                'findings, real rule mined on mammography biopsy data.</div>',
+                unsafe_allow_html=True,
+            )
+
+            ex_row1_a, ex_row1_b = st.columns(2)
+            with ex_row1_a:
+                st.markdown(
+                    f'<div style="min-height:105px; box-sizing:border-box;">'
+                    + render_example_box(
+                        "Positive examples  E⁺", PALETTE["success"], PALETTE["success_soft"], "#BFE3CE",
+                        "pos(is_malignant(case1)).\npos(is_malignant(case3)).",
+                    )
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+            with ex_row1_b:
+                st.markdown(
+                    f'<div style="min-height:105px; box-sizing:border-box;">'
+                    + render_example_box(
+                        "Negative examples  E⁻", PALETTE["error"], PALETTE["error_soft"], "#F3C6C0",
+                        "neg(is_malignant(case2)).\nneg(is_malignant(case4)).",
+                    )
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+
+            st.write("")
+            ex_row2_a, ex_row2_arrow, ex_row2_b = st.columns([0.6, 0.4, 0.7])
+            with ex_row2_a:
+                st.markdown(
+                    f'<div style="min-height:130px; box-sizing:border-box;">'
+                    + render_example_box(
+                        "Background knowledge  B", PALETTE["primary"], PALETTE["primary_soft"], "#C2D3F7",
+                        "shape(case1,'Irregular').\nmargins(case1,'Spiculated').\n"
+                        "shape(case2,'Round').",
+                    )
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+            with ex_row2_arrow:
+                st.markdown(
+                    f'<div style="min-height:130px; display:flex; flex-direction:column; align-items:center; '
+                    f'justify-content:center; gap:6px; color:{PALETTE["text_muted"]}; font-size:0.85rem; font-weight:600; text-align:center;">'
+                    f'<span>ILP<br/>learning</span>{svg_icon("arrow_right", PALETTE["text_muted"], 32, 2.2)}</div>',
+                    unsafe_allow_html=True,
+                )
+            with ex_row2_b:
+                st.markdown(
+                    f'<div style="min-height:130px; box-sizing:border-box;">'
+                    + render_example_box(
+                        "Learned hypothesis  H", PALETTE["progol"], PALETTE["progol_soft"], "#D9CCFB",
+                        "is_malignant(A) :-\n    shape(A,'Irregular'),\n    margins(A,'Spiculated').",
+                    )
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown(
+                f'<div style="font-size:0.82rem; color:{PALETTE["text_muted"]}; margin-top:10px;">'
+                "Source: Ferreira, Dutra, "
+                "Salvini &amp; Burnside, <i>\"Interpretable Models to Predict Breast Cancer\"</i>, IEEE BIBM 2016.</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.write("")
+
+    with st.expander("Formal definition (Muggleton, 1991)"):
         st.markdown(
-            "**Facts:** atomic statements taken as true, e.g. `red(b3).` "
-            "or `piece(s1, b3).`, no logic, just data."
-        )
-    with lp_col_2:
-        st.markdown(
-            "**Rules:** statements of the form `head :- body.`, e.g. "
-            "`zendo(S) :- piece(S,P), red(P).`"
-        )
-    with lp_col_3:
-        st.markdown(
-            "**Queries:**  a logic program answers questions by "
-            "resolution: searching for a chain of facts and rules "
-            "that proves (or disproves) a goal."
-        )
-
-    st.info(
-        "**Where the \"Machine Learning\" in ILP actually comes from**, "
-        "on its own, logic programming isn't learning: a Prolog program "
-        "only proves what it's already been told. ILP turns it into ML by "
-        "flipping the direction: instead of writing the rules by hand, it "
-        "starts from **facts** (background knowledge) and a set of "
-        "**observed examples**, and *searches for* a rule general enough "
-        "to explain them, generalizing from specific observations to a "
-        "rule that also covers unseen cases. That's the same inductive "
-        "principle as statistical ML (learn a general pattern from data); "
-        "ILP just represents what it learns as symbolic logic instead of "
-        "numeric weights.",
-        icon=":material/psychology:",
-    )
-
-    st.divider()
-
-    st.markdown('<div class="section-title">The ILP learning problem</div>', unsafe_allow_html=True)
-
-    st.markdown(
-        f"""
-        <style>
-        div[class*="st-key-ilp_problem_box"] {{
-            background: {PALETTE["bg_card"]};
-        }}
-        div[class*="st-key-ilp_problem_box"] [data-testid="stMarkdownContainer"] {{
-            margin-bottom: 0 !important;
-        }}
-        div[class*="st-key-ilp_problem_box"] [data-testid="stElementContainer"] {{
-            margin-bottom: 0 !important;
-        }}
-        div[class*="st-key-ilp_problem_box"] .katex-display {{
-            margin: 0.4rem 0 0 0 !important;
-        }}
-        div[class*="st-key-ilp_problem_box"] [data-testid="stVerticalBlock"] {{
-            gap: 0 !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.container(key="ilp_problem_box", border=True):
-        st.markdown(
-            "**ILP Problem Setting**  ILP combines logic programming and "
-            "machine learning to derive interpretable rules from "
-            "structured data. Given background knowledge $B_k$, a set of "
-            "positive examples $E^+$, and a set of negative examples "
-            "$E^-$, the task is to induce a hypothesis $H$ (a logic "
-            "program) such that:"
+            "Given background knowledge $B_k$, a set of positive examples $E^+$, and a set of "
+            "negative examples $E^-$, the task is to induce a hypothesis $H$ (a logic program) "
+            "such that:"
         )
         st.latex(
             r"\forall e^+ \in E^+ : B_k \cup H \vdash e^+"
             r"\qquad \text{and} \qquad"
             r"\forall e^- \in E^- : B_k \cup H \nvdash e^-."
         )
-
-    st.markdown(
-        "Every approach on this platform searches for exactly such an "
-        "*H* — they differ only in how that search is distributed across "
-        "clients.\n\n"
-        "📄 [*Inductive Logic Programming* — Muggleton (1991), "
-        "*New Generation Computing*, 8:295–318](https://www.doc.ic.ac.uk/~shm/Papers/ilp.pdf)"
-    )
-
-    st.divider()
-
-    st.markdown('<div class="section-title">The building blocks: Prolog, ASP, and ILP systems</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="section-caption">ILP does not invent its own logic — it reuses existing logic-programming languages to represent and search for hypotheses</div>',
-        unsafe_allow_html=True,
-    )
-
-    block_col_1, block_col_2, block_col_3 = st.columns(3)
-    with block_col_1:
         st.markdown(
-            f'<div class="rep-card" style="border-color:{PALETTE["popper"]}40;">'
-            + render_badge("Language", PALETTE["popper"], PALETTE["popper_soft"])
-            + '<div class="rep-title" style="margin-top:10px;">Prolog</div>'
-            + "<div class=\"rep-body\">A logic-programming language built "
-            "around facts, rules and queries answered by resolution. "
-            "Hypotheses learned by this platform — and by most ILP systems "
-            "— are Prolog programs: small sets of Horn clauses like "
-            "<code>head :- body.</code></div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    with block_col_2:
-        st.markdown(
-            f'<div class="rep-card" style="border-color:{PALETTE["primary"]}40;">'
-            + render_badge("Solver", PALETTE["primary"], PALETTE["primary_soft"])
-            + '<div class="rep-title" style="margin-top:10px;">ASP (Answer Set Programming)</div>'
-            + "<div class=\"rep-body\">A declarative paradigm for solving "
-            "combinatorial search problems: you describe the constraints, "
-            "and a solver enumerates the models that satisfy them. Popper "
-            "uses an ASP solver (Clingo) under the hood to ground and "
-            "search the space of candidate hypotheses efficiently.</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    with block_col_3:
-        st.markdown(
-            f'<div class="rep-card" style="border-color:{PALETTE["progol"]}40;">'
-            + render_badge("ILP system", PALETTE["progol"], PALETTE["progol_soft"])
-            + '<div class="rep-title" style="margin-top:10px;">Progol</div>'
-            + "<div class=\"rep-body\">One of the classic ILP systems, "
-            "built on <b>inverse entailment</b>: it builds the most "
-            "specific clause that entails an example, then searches a "
-            "refinement graph beneath it, guided by mode declarations "
-            "(<code>modeh</code>/<code>modeb</code>).</div>"
-            "</div>",
-            unsafe_allow_html=True,
+            "Every approach on this platform searches for exactly such an *H* — they differ only "
+            "in how that search is distributed across clients.\n\n"
+            "📄 [*Inductive Logic Programming* — Muggleton (1991), "
+            "*New Generation Computing*, 8:295–318](https://www.doc.ic.ac.uk/~shm/Papers/ilp.pdf)"
         )
 
-    st.write("")
-    st.markdown(
-        "There are many other ILP systems beyond Progol, Aleph, FOIL, "
-        "TILDE, Metagol, ILASP, among others,  each with its own search "
-        "strategy and bias language. This platform is built on "
-        "**Popper**, a more recent system that reformulates ILP search as "
-        "constraint solving over ASP, and every dataset here is described "
-        "in Popper's own representation (`exs.pl` / `bk.pl` / `bias.pl`). "
-        "The Progol view below is auto-translated for comparison, since "
-        "Progol-style mode declarations remain the reference most "
-        "ILP literature is written against."
-    )
+    #st.divider()
 
-    st.divider()
+    # --- Section 2: Prolog / ASP / ILP systems ----------------------------
 
-    st.markdown('<div class="section-title">Two ways to write a language bias</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="section-caption">Without restrictions the space of candidate programs is infinite — a bias tells the learner what a hypothesis is even allowed to look like. This platform runs on Popper; the Progol view below is auto-translated from each dataset\'s bias.pl for comparison.</div>',
-        unsafe_allow_html=True,
-    )
+    prolog_col, asp_col, systems_col = st.columns(3)
 
-    rep_col_1, rep_col_2 = st.columns(2)
-    with rep_col_1:
-        st.markdown(
-            f'<div class="rep-card" style="border-color:{PALETTE["progol"]}40;">'
-            + render_badge("Progol / Aleph", PALETTE["progol"], PALETTE["progol_soft"])
-            + '<div class="rep-title" style="margin-top:10px;">Mode declarations</div>'
-            + "<div class=\"rep-body\">Each predicate gets a <code>modeh</code> "
-            "(head) or <code>modeb</code> (body) declaration. Arguments are "
-            "annotated <code>+</code> (input), <code>-</code> (output) or "
-            "<code>#</code> (constant), followed by their type.</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.code(
-            "modeh(1, zendo(+state)).\n"
-            "modeb(*, piece(+state, -piece)).\n"
-            "modeb(*, red(+piece)).",
-            language="prolog",
-        )
-    with rep_col_2:
-        st.markdown(
-            f'<div class="rep-card" style="border-color:{PALETTE["popper"]}40;">'
-            + render_badge("Popper", PALETTE["popper"], PALETTE["popper_soft"])
-            + '<div class="rep-title" style="margin-top:10px;">Declarative bias (bias.pl)</div>'
-            + "<div class=\"rep-body\"><code>head_pred/2</code> and "
-            "<code>body_pred/2</code> declare allowed predicates, "
-            "<code>type/2</code> and <code>direction/2</code> play the role "
-            "of Progol's <code>+/-/#</code>, and <code>max_vars</code> / "
-            "<code>max_body</code> bound the hypothesis shape.</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.code(
-            "head_pred(zendo,1).\n"
-            "body_pred(piece,2).\n"
-            "type(piece,(state,piece)).\n"
-            "direction(piece,(in,out)).",
-            language="prolog",
-        )
+    with prolog_col:
+        with st.container(key="ovcard_prolog", height="stretch"):
+            st.markdown(
+                f'<div class="rep-title">{svg_icon("book_open", NAVY, 20)}<span>Prolog</span></div>'
+                + '<div class="rep-body">Prolog represents knowledge using facts and rules, and answers '
+                "queries by logical inference.</div>",
+                unsafe_allow_html=True,
+            )
+            prolog_code_col, prolog_graph_col = st.columns([1.7, 1])
+            with prolog_code_col:
+                st.code(
+                    "% Facts\nshape(case1, 'Irregular').\nmargins(case1, 'Spiculated').\n\n"
+                    "% Rule\nis_malignant(A) :-\n    shape(A, 'Irregular'),\n    margins(A, 'Spiculated').\n\n"
+                    "% Query\n?- is_malignant(case1).\ntrue.",
+                    language="prolog",
+                )
+            with prolog_graph_col:
+                prolog_graph_svg = f"""<svg viewBox="0 0 260 236" width="100%" height="260">
+<rect x="55" y="12" width="150" height="40" rx="12" fill="{PALETTE["primary_soft"]}" stroke="{PALETTE["primary"]}"/>
+<text x="130" y="37" text-anchor="middle" font-size="13" fill="{PALETTE["primary"]}">shape = Irregular</text>
+<line x1="130" y1="52" x2="130" y2="76" stroke="{PALETTE["text_muted"]}" stroke-width="1.6"/>
+<rect x="55" y="88" width="150" height="40" rx="12" fill="{PALETTE["primary_soft"]}" stroke="{PALETTE["primary"]}"/>
+<text x="130" y="113" text-anchor="middle" font-size="13" fill="{PALETTE["primary"]}">margins = Spiculated</text>
+<line x1="130" y1="128" x2="130" y2="152" stroke="{PALETTE["text_muted"]}" stroke-width="1.6"/>
+<polygon points="124,152 136,152 130,162" fill="{PALETTE["text_muted"]}"/>
+<rect x="55" y="168" width="150" height="40" rx="12" fill="{PALETTE["success_soft"]}" stroke="{PALETTE["success"]}"/>
+<text x="120" y="193" text-anchor="middle" font-size="12" fill="{PALETTE["success"]}">is_malignant</text>
+<circle cx="190" cy="188" r="13" fill="{PALETTE["success_soft"]}" stroke="{PALETTE["success"]}"/>
+<path d="M184 188 l4 4 l9 -9" fill="none" stroke="{PALETTE["success"]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="130" y="228" text-anchor="middle" font-size="12" fill="{PALETTE["text_muted"]}">is_malignant(case1)</text>
+</svg>"""
+                st.markdown(prolog_graph_svg, unsafe_allow_html=True)
 
-    st.write("")
-
-    utility_dataset = st.selectbox(
-        "Translate a dataset's bias",
-        options=get_available_datasets(),
-        format_func=format_dataset_name,
-        key="utility_dataset",
-    )
-
-    utility_directory = DATASETS_DIRECTORY / utility_dataset
-    utility_bias_text = read_text_file(utility_directory / "bias.pl")
-    utility_examples_text = read_text_file(utility_directory / "exs.pl")
-    utility_positive, utility_negative = split_examples(utility_examples_text)
-    utility_parsed = parse_bias(utility_bias_text)
-
-    popper_col, progol_col = st.columns(2)
-    with popper_col:
-        st.markdown("**Popper — bias.pl**")
-        st.code(utility_bias_text or "(empty)", language="prolog")
-    with progol_col:
-        st.markdown("**Progol-style — mode declarations**")
-        st.code("\n".join(build_progol_modes(utility_parsed)) or "(none)", language="prolog")
-        with st.expander("Examples (Progol/Aleph convention)"):
+    with asp_col:
+        with st.container(key="ovcard_asp", height="stretch"):
+            st.markdown(
+                f'<div class="rep-title">{svg_icon("code", NAVY, 20)}<span>ASP – Answer Set Programming</span></div>'
+                + '<div class="rep-body">ASP is based on finding answer sets (stable models) of a logic '
+                "program. It is used in many modern ILP systems (e.g., Popper) as a reasoning and search "
+                "engine.</div>",
+                unsafe_allow_html=True,
+            )
             st.code(
-                "\n".join(build_progol_examples(utility_positive, utility_negative)) or "(none)",
+                "{ include(shape,irregular) }.\n{ include(margins,spiculated) }.\n"
+                ":- not include(shape,irregular),\n   not include(margins,spiculated).\n\n"
+                "#show include/2.",
                 language="prolog",
+            )
+            st.markdown(
+                f'<div style="display:flex; gap:14px; align-items:flex-start; background:{PALETTE["bg_card"]}; '
+                f'border:1px solid {PALETTE["border"]}; border-radius:12px; padding:16px 18px; margin-top:12px;">'
+                f'{svg_icon("bulb", PALETTE["text_muted"], 24)}'
+                f'<span style="font-size:0.95rem; color:{PALETTE["text_muted"]}; line-height:1.55;">ASP allows expressive '
+                "declarative specifications and efficient reasoning, which is useful for ILP search and "
+                "constraint handling.</span></div>",
+                unsafe_allow_html=True,
+            )
+
+    with systems_col:
+        with st.container(key="ovcard_systems", height="stretch"):
+            st.markdown(
+                f'<div class="rep-title">{svg_icon("layers", NAVY, 20)}<span>ILP systems</span></div>'
+                + '<div class="rep-body">There are many ILP systems, each with its own learning strategy, '
+                "search method and language bias. In this platform, we focus on "
+                "<b>Progol</b> and <b>Popper</b>.</div>",
+                unsafe_allow_html=True,
+            )
+            subsystem_col_a, subsystem_col_b = st.columns(2)
+            with subsystem_col_a:
+                st.markdown(
+                    render_subsystem_card(
+                        svg_icon("book_open", PALETTE["progol"], 16), PALETTE["progol"],
+                        PALETTE["progol_soft"], PALETTE["progol"], "Progol",
+                        [
+                            "Classic ILP system",
+                            "Top-down, clause-by-clause search (inverse entailment)",
+                            "Uses MdL principle",
+                            "Well-suited for many structured domains",
+                        ],
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with subsystem_col_b:
+                st.markdown(
+                    render_subsystem_card(
+                        svg_icon("book_open", PALETTE["popper"], 16), PALETTE["popper"],
+                        PALETTE["popper_soft"], PALETTE["popper"], "Popper",
+                        [
+                            "ILP system based on ASP",
+                            "Learn a set of logical rules",
+                            "Uses constraints and iterative rule refinement",
+                            "Often fast and effective",
+                            "Implemented using clingo (ASP solver)",
+                        ],
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+    #st.divider()
+
+    # --- Section 3: the ILP learning process + why ILP ---------------------
+
+    process_col, why_col = st.columns([2, 1])
+
+    with process_col:
+        with st.container(key="ovcard_process"):
+            st.markdown('<div class="section-title">The ILP learning process</div>', unsafe_allow_html=True)
+            step_1, arrow_1, step_2, arrow_2, step_3, arrow_3, step_4 = st.columns(
+                [2.2, 0.3, 2.2, 0.3, 2.2, 0.3, 2.2]
+            )
+            with step_1:
+                st.markdown(
+                    render_process_step(
+                        1, PALETTE["success"], PALETTE["success_soft"], "Input",
+                        "Positive examples E⁺<br/>Negative examples E⁻<br/>Background knowledge B<br/>Language bias",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with arrow_1:
+                st.markdown(f'<div class="process-arrow">{svg_icon("arrow_right", PALETTE["text_muted"], 16)}</div>', unsafe_allow_html=True)
+            with step_2:
+                st.markdown(
+                    render_process_step(
+                        2, PALETTE["progol"], PALETTE["progol_soft"], "Search",
+                        "Explore candidate logic programs according to the bias",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with arrow_2:
+                st.markdown(f'<div class="process-arrow">{svg_icon("arrow_right", PALETTE["text_muted"], 16)}</div>', unsafe_allow_html=True)
+            with step_3:
+                st.markdown(
+                    render_process_step(
+                        3, PALETTE["progol"], PALETTE["progol_soft"], "Evaluation",
+                        "Test candidates on examples using a logical reasoner",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with arrow_3:
+                st.markdown(f'<div class="process-arrow">{svg_icon("arrow_right", PALETTE["text_muted"], 16)}</div>', unsafe_allow_html=True)
+            with step_4:
+                st.markdown(
+                    render_process_step(
+                        4, PALETTE["primary"], PALETTE["primary_soft"], "Output",
+                        "Best hypothesis H (a logic program)",
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+    with why_col:
+        with st.container(key="ovcard_why"):
+            st.markdown('<div class="section-title">Why ILP?</div>', unsafe_allow_html=True)
+            st.markdown(
+                render_why_row("search", PALETTE["primary"], PALETTE["primary_soft"], "Interpretable models (symbolic rules)")
+                + render_why_row("shield_check", PALETTE["success"], PALETTE["success_soft"], "Human-readable and explainable")
+                + render_why_row("database", PALETTE["progol"], PALETTE["progol_soft"], "Works well with structured and relational data")
+                + render_why_row("share", PALETTE["progol"], PALETTE["progol_soft"], "Useful in many real-world domains (bioinformatics, medicine, knowledge graphs, etc.)"),
+                unsafe_allow_html=True,
             )
 
 
@@ -1138,10 +1383,6 @@ with examples_tab:
             with explorer_header_left:
                 st.markdown(
                     f'<div class="section-title" style="font-size:1.2rem;">{format_dataset_name(explorer_selected_dataset)}</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    f'<div class="section-caption">{explorer_directory}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -1297,6 +1538,101 @@ with examples_tab:
                     )
                     with st.container(height=420, border=True):
                         st.code(explorer_bias_text or "—", language="prolog", line_numbers=True)
+
+
+# =======================================================================
+# LANGUAGE BIAS TAB — Progol vs Popper bias representations, and a
+# per-dataset translator between the two.
+# =======================================================================
+
+with language_bias_tab:
+    st.markdown('<div class="section-title">Two ways to write a language bias</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-caption">Without restrictions the space of candidate programs is infinite — a bias tells the learner what a hypothesis is even allowed to look like. This platform runs on Popper; the Progol view below is auto-translated from each dataset\'s bias.pl for comparison.</div>',
+        unsafe_allow_html=True,
+    )
+
+    rep_col_1, rep_col_2 = st.columns(2)
+    with rep_col_1:
+        st.markdown(
+            f'<div class="rep-card" style="border-color:{PALETTE["popper"]}40;">'
+            + render_badge("Popper", PALETTE["popper"], PALETTE["popper_soft"])
+            + '<div class="rep-title" style="margin-top:10px;">Declarative bias (bias.pl)</div>'
+            + "<div class=\"rep-body\"><code>head_pred/2</code> and "
+            "<code>body_pred/2</code> declare allowed predicates, "
+            "<code>type/2</code> and <code>direction/2</code> play the role "
+            "of Progol's <code>+/-/#</code>, and <code>max_vars</code> / "
+            "<code>max_body</code> bound the hypothesis shape.</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.code(
+            "head_pred(zendo,1).\n"
+            "body_pred(piece,2).\n"
+            "type(piece,(state,piece)).\n"
+            "direction(piece,(in,out)).",
+            language="prolog",
+        )
+    with rep_col_2:
+        st.markdown(
+            f'<div class="rep-card" style="border-color:{PALETTE["progol"]}40;">'
+            + render_badge("Progol / Aleph", PALETTE["progol"], PALETTE["progol_soft"])
+            + '<div class="rep-title" style="margin-top:10px;">Mode declarations</div>'
+            + "<div class=\"rep-body\">Each predicate gets a <code>modeh</code> "
+            "(head) or <code>modeb</code> (body) declaration. Arguments are "
+            "annotated <code>+</code> (input), <code>-</code> (output) or "
+            "<code>#</code> (constant), followed by their type.</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.code(
+            "modeh(1, zendo(+state)).\n"
+            "modeb(*, piece(+state, -piece)).\n"
+            "modeb(*, red(+piece)).",
+            language="prolog",
+        )
+
+    st.write("")
+
+    utility_dataset = st.selectbox(
+        "Translate a dataset's bias",
+        options=get_available_datasets(),
+        format_func=format_dataset_name,
+        key="utility_dataset",
+    )
+
+    utility_directory = DATASETS_DIRECTORY / utility_dataset
+    utility_bias_text = read_text_file(utility_directory / "bias.pl")
+    utility_bk_text = read_text_file(utility_directory / "bk.pl")
+    utility_examples_text = read_text_file(utility_directory / "exs.pl")
+    utility_positive, utility_negative = split_examples(utility_examples_text)
+    utility_parsed = parse_bias(utility_bias_text)
+
+    utility_popper_files = {
+        "bias.pl": utility_bias_text,
+        "bk.pl": utility_bk_text,
+        "exs.pl": utility_examples_text,
+    }
+
+    popper_col, progol_col = st.columns(2)
+    with popper_col:
+        st.markdown("**Popper**")
+        utility_popper_file_tab = st.radio(
+            "File",
+            options=["bias.pl", "bk.pl", "exs.pl"],
+            horizontal=True,
+            key="utility_popper_file_tab",
+            label_visibility="collapsed",
+        )
+        st.code(utility_popper_files[utility_popper_file_tab] or "(empty)", language="prolog", line_numbers=True)
+    with progol_col:
+        st.markdown("**Progol-style — mode declarations**")
+        st.code("\n".join(build_progol_modes(utility_parsed)) or "(none)", language="prolog")
+        with st.expander("Examples (Progol/Aleph convention)"):
+            st.code(
+                "\n".join(build_progol_examples(utility_positive, utility_negative)) or "(none)",
+                language="prolog",
+            )
 
 
 # =======================================================================
@@ -2102,3 +2438,9 @@ with custom_ilp_tab:
                                 st.error(f"Chat failed: {exc}")
 
 
+
+
+st.markdown(
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    unsafe_allow_html=True,
+)

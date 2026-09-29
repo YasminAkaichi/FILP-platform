@@ -106,6 +106,9 @@ def inject_style() -> None:
         /* Light gray page backdrop, with the main content floating as a
            white, rounded, shadowed card — matching the FILP mockup. */
         .block-container {{
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
             padding-top: 3rem;
             padding-bottom: 3rem;
             padding-left: 2.2rem;
@@ -482,12 +485,16 @@ def altair_donut(
     category: str,
     value: str,
     colors: dict[str, str],
+    inner_radius: int = 58,
+    outer_radius: int = 95,
+    height: int = 230,
+    center_text_size: int = 24,
 ) -> alt.LayerChart:
     total = data[value].sum()
 
     arc = (
         alt.Chart(data)
-        .mark_arc(innerRadius=58, outerRadius=95, cornerRadius=3, padAngle=0.01)
+        .mark_arc(innerRadius=inner_radius, outerRadius=outer_radius, cornerRadius=3, padAngle=0.01)
         .encode(
             theta=alt.Theta(f"{value}:Q", stack=True),
             color=alt.Color(
@@ -502,11 +509,11 @@ def altair_donut(
 
     center_text = (
         alt.Chart(pd.DataFrame({"text": [f"{total:.0f}"]}))
-        .mark_text(size=24, fontWeight="bold", color=PALETTE["text"])
+        .mark_text(size=center_text_size, fontWeight="bold", color=PALETTE["text"])
         .encode(text="text:N")
     )
 
-    return alt.layer(arc, center_text).properties(height=230)
+    return alt.layer(arc, center_text).properties(height=height)
 
 
 def style_pos_neg(value: object) -> str:
@@ -538,6 +545,7 @@ def load_benchmark_metadata(benchmark_id: int) -> dict:
                 base_seed,
                 learner,
                 rounds,
+                timeout,
                 status
             FROM benchmarks
             WHERE id = ?
@@ -568,7 +576,8 @@ def load_benchmark_runs(benchmark_id: int) -> list[dict]:
                 sr.number_of_rounds,
                 sr.number_of_programs,
                 sr.final_score,
-                sr.solution
+                sr.solution,
+                sr.solution_found
             FROM benchmark_runs br
             JOIN experiments e
                 ON e.id = br.experiment_id
@@ -581,6 +590,41 @@ def load_benchmark_runs(benchmark_id: int) -> list[dict]:
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def delete_benchmark(benchmark_id: int) -> None:
+    """Permanently delete a benchmark and everything derived from it.
+
+    `benchmark_runs` cascades on `benchmark_id`, but the underlying
+    `experiments` rows (and, via their own ON DELETE CASCADE,
+    `server_results` / `client_results` / `hypothesis_log` /
+    `consensus_results`) are only linked from benchmark_runs.experiment_id
+    — deleting the benchmark alone would leave those orphaned. So every
+    experiment tied to this benchmark is deleted explicitly first; that
+    cascade takes care of the rest, then the (now childless) benchmark
+    row itself is removed.
+    """
+    with get_connection() as connection:
+        experiment_ids = [
+            row["experiment_id"]
+            for row in connection.execute(
+                "SELECT experiment_id FROM benchmark_runs WHERE benchmark_id = ?",
+                (benchmark_id,),
+            ).fetchall()
+        ]
+
+        for experiment_id in experiment_ids:
+            connection.execute(
+                "DELETE FROM experiments WHERE id = ?",
+                (experiment_id,),
+            )
+
+        connection.execute(
+            "DELETE FROM benchmarks WHERE id = ?",
+            (benchmark_id,),
+        )
+
+        connection.commit()
 
 
 def load_all_benchmarks(limit: int = 500) -> list[dict]:
@@ -654,6 +698,27 @@ def find_benchmark_id_by_experiment(experiment_id: int) -> int | None:
         return None
 
     return int(row["benchmark_id"])
+
+
+def load_hypothesis_log(experiment_id: int) -> list[dict]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                sequence_number,
+                hypothesis,
+                score,
+                epsilon_positive,
+                epsilon_negative,
+                is_final_validation
+            FROM hypothesis_log
+            WHERE experiment_id = ?
+            ORDER BY sequence_number
+            """,
+            (experiment_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
 
 
 def load_client_results(benchmark_id: int) -> list[dict]:
@@ -845,15 +910,54 @@ if (
     start_index = (current_page - 1) * PAGE_SIZE
     page_rows = filtered_benchmarks[start_index : start_index + PAGE_SIZE]
 
+    pending_delete_id = st.session_state.get("pending_delete_benchmark_id")
+
+    if pending_delete_id is not None:
+        pending_delete_benchmark = next(
+            (b for b in all_benchmarks if b["id"] == pending_delete_id),
+            None,
+        )
+        with st.container(border=True):
+            st.warning(
+                f"Delete experiment #{pending_delete_id}"
+                f" ({pending_delete_benchmark['name'] if pending_delete_benchmark else 'unknown'})"
+                " and every run, hypothesis and client result under it? "
+                "This cannot be undone."
+            )
+            # Nesting the two buttons inside their own narrow outer
+            # column (instead of two wide columns side by side in the
+            # full-width row) keeps them right next to each other —
+            # with wide columns, the gap between "Delete permanently"
+            # and "Cancel" is however much blank space is left in the
+            # first (wide) column after the button, not a fixed gap.
+            buttons_area, _spacer = st.columns([2, 8])
+            confirm_col, cancel_col = buttons_area.columns(2)
+            with confirm_col:
+                if st.button(
+                    "Delete",
+                    type="primary",
+                    key="confirm_delete_benchmark",
+                    use_container_width=True,
+                ):
+                    delete_benchmark(pending_delete_id)
+                    st.session_state.pop("pending_delete_benchmark_id", None)
+                    st.success(f"Experiment #{pending_delete_id} deleted.")
+                    st.rerun()
+            with cancel_col:
+                if st.button("Cancel", key="cancel_delete_benchmark", use_container_width=True):
+                    st.session_state.pop("pending_delete_benchmark_id", None)
+                    st.rerun()
+        st.write("")
+
     if not page_rows:
         st.info("No experiment matches your filters.")
     else:
-        COLUMN_WIDTHS = [0.6, 1.5, 1.1, 1.0, 0.6, 1.0, 1.0, 0.9]
+        COLUMN_WIDTHS = [0.6, 1.4, 1.1, 1.0, 0.6, 1.0, 1.0, 0.6, 0.5]
 
         head_columns = st.columns(COLUMN_WIDTHS)
         for head_column, label in zip(
             head_columns,
-            ["ID", "Name", "Method", "Dataset", "Clients", "Status", "Date", "Actions"],
+            ["ID", "Name", "Method", "Dataset", "Clients", "Status", "Date", "", ""],
         ):
             with head_column:
                 st.markdown(f'<div class="table-head">{label}</div>', unsafe_allow_html=True)
@@ -880,6 +984,15 @@ if (
                     st.session_state["selected_benchmark_id"] = benchmark["id"]
                     st.session_state["experiments_view"] = "detail"
                     st.rerun()
+            with row_columns[8]:
+                if st.button(
+                    "🗑",
+                    key=f"delete_{benchmark['id']}",
+                    help="Delete this experiment",
+                    use_container_width=True,
+                ):
+                    st.session_state["pending_delete_benchmark_id"] = benchmark["id"]
+                    st.rerun()
 
         st.write("")
         st.caption(
@@ -887,7 +1000,7 @@ if (
         )
 
         if total_pages > 1:
-            pagination_columns = st.columns([0.6] + [0.5] * total_pages + [0.6] + [6])
+            pagination_columns = st.columns([0.4] + [0.42] * total_pages + [0.4] + [4])
 
             with pagination_columns[0]:
                 if st.button("◀", disabled=(current_page <= 1), key="page_prev"):
@@ -900,6 +1013,7 @@ if (
                         str(page_number),
                         key=f"page_{page_number}",
                         type="primary" if page_number == current_page else "secondary",
+                        use_container_width=True,
                     ):
                         st.session_state["experiments_page"] = page_number
                         st.rerun()
@@ -980,6 +1094,36 @@ with header_right:
         mime="text/csv",
         use_container_width=True,
     )
+    if st.button("🗑 Delete experiment", key="delete_from_detail", use_container_width=True):
+        st.session_state["pending_delete_benchmark_id"] = metadata["id"]
+        st.rerun()
+
+if st.session_state.get("pending_delete_benchmark_id") == metadata["id"]:
+    with st.container(border=True):
+        st.warning(
+            f"Delete experiment #{metadata['id']} ({metadata['name']}) and "
+            "every run, hypothesis and client result under it? This cannot "
+            "be undone."
+        )
+        buttons_area, _spacer = st.columns([2, 8])
+        confirm_col, cancel_col = buttons_area.columns(2)
+        with confirm_col:
+            if st.button(
+                "Delete",
+                type="primary",
+                key="confirm_delete_from_detail",
+                use_container_width=True,
+            ):
+                delete_benchmark(metadata["id"])
+                st.session_state.pop("pending_delete_benchmark_id", None)
+                st.session_state.pop("selected_benchmark_id", None)
+                st.session_state["experiments_view"] = "list"
+                st.success(f"Experiment #{metadata['id']} deleted.")
+                st.rerun()
+        with cancel_col:
+            if st.button("Cancel", key="cancel_delete_from_detail", use_container_width=True):
+                st.session_state.pop("pending_delete_benchmark_id", None)
+                st.rerun()
 
 st.write("")
 
@@ -1168,9 +1312,11 @@ with tab_overview:
                     "*plus* **Client evaluation time** below (that client-side "
                     "coverage testing is real Popper work, even though it "
                     "physically runs on the clients).\n"
-                    "- **Popper core (server)** — Tcentral: only the server's "
-                    "own build/ground/constrain step, excluding anything done "
-                    "by the clients.\n"
+                    "- **Popper core (server)** — Tcentral: the server's own "
+                    "generate/build/ground/constrain steps (proposing the next "
+                    "candidate program AND turning its test outcome into new "
+                    "ASP constraints), excluding anything done by the "
+                    "clients.\n"
                     "- **Client evaluation time** — the slowest client's "
                     "total time testing the proposed programs against its "
                     "local examples (the max across clients, not the sum: "
@@ -1209,43 +1355,98 @@ with tab_overview:
 
         outcome_left, outcome_right, outcome_info = st.columns([1, 1.1, 1])
 
+        NAVY = "#1B2A4C"
+
+        # Flat, single-color line icons (Canva-style) instead of emoji,
+        # so the card matches the rest of the dashboard's design system.
+        ICON_ROUNDS = (
+            f'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" '
+            f'stroke="{NAVY}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>'
+            "</svg>"
+        )
+        ICON_PROGRAMS = (
+            f'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" '
+            f'stroke="{NAVY}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            '<polygon points="12 2 2 7 12 12 22 7 12 2"/>'
+            '<polyline points="2 17 12 22 22 17"/>'
+            '<polyline points="2 12 12 17 22 12"/>'
+            "</svg>"
+        )
+        ICON_SCORE = (
+            f'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" '
+            f'stroke="{NAVY}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="{}"/>'.format(NAVY)
+            + "</svg>"
+        )
+
         with outcome_left:
             with st.container(border=True):
                 st.markdown('<div class="section-title">Learning outcome</div>', unsafe_allow_html=True)
-                st.markdown(f"🔄 &nbsp; **{fmt(summary.number_of_rounds.mean, 1)}** rounds")
-                st.markdown(f"🧩 &nbsp; **{fmt(summary.number_of_programs.mean, 1)}** programs explored")
-                st.markdown(f"🏆 &nbsp; **{fmt(summary.final_score.mean, 2)}** final score")
+                st.markdown(
+                    f'<div style="display:flex; align-items:center; gap:8px; margin:6px 0;">'
+                    f'{ICON_ROUNDS}<span><strong>{fmt(summary.number_of_rounds.mean, 1)}</strong> rounds</span></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'<div style="display:flex; align-items:center; gap:8px; margin:6px 0;">'
+                    f'{ICON_PROGRAMS}<span><strong>{fmt(summary.number_of_programs.mean, 1)}</strong> programs explored</span></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'<div style="display:flex; align-items:center; gap:8px; margin:6px 0;">'
+                    f'{ICON_SCORE}<span><strong>{fmt(summary.final_score.mean, 2)}</strong> final score</span></div>',
+                    unsafe_allow_html=True,
+                )
                 st.caption(
                     "Averaged across all runs in this benchmark. See the "
                     "Models tab for the hypothesis and per-client contribution."
                 )
 
         latest_run_number = runs[-1]["run_number"] if runs else None
+        latest_run_solution_found = bool(runs[-1]["solution_found"]) if runs else False
         latest_client_rows = [
             row
             for row in client_results
             if latest_run_number is not None and int(row["run_number"]) == latest_run_number
         ]
-        accepted_count = sum(1 for row in latest_client_rows if row["accepted_solution"])
-        not_accepted_count = len(latest_client_rows) - accepted_count
+        expected_clients = int(metadata.get("number_of_clients") or 0)
+        connected_clients = len(latest_client_rows)
 
         with outcome_right:
             with st.container(border=True):
-                st.markdown('<div class="section-title">Client acceptance</div>', unsafe_allow_html=True)
-                if latest_client_rows:
-                    acceptance_data = pd.DataFrame(
+                st.markdown('<div class="section-title">Clients connected</div>', unsafe_allow_html=True)
+                if expected_clients:
+                    not_connected_clients = max(expected_clients - connected_clients, 0)
+                    connection_data = pd.DataFrame(
                         {
-                            "Outcome": ["Accepted", "Not accepted"],
-                            "Count": [accepted_count, not_accepted_count],
+                            "Status": ["Connected", "Not connected"],
+                            "Count": [connected_clients, not_connected_clients],
                         }
                     )
-                    acceptance_colors = {
-                        "Accepted": PALETTE["success"],
-                        "Not accepted": PALETTE["error"],
+                    connection_colors = {
+                        "Connected": PALETTE["success"],
+                        "Not connected": PALETTE["error"],
                     }
                     st.altair_chart(
-                        altair_donut(acceptance_data, "Outcome", "Count", acceptance_colors),
+                        altair_donut(
+                            connection_data,
+                            "Status",
+                            "Count",
+                            connection_colors,
+                            inner_radius=36,
+                            outer_radius=60,
+                            height=140,
+                            center_text_size=16,
+                        ),
                         use_container_width=True,
+                    )
+                    connected_ids = sorted(int(row["client_id"]) for row in latest_client_rows)
+                    st.caption(
+                        f"Clients {', '.join(str(cid) for cid in connected_ids)} reported a "
+                        "result for the latest run."
+                        if connected_ids
+                        else "No client reported a result for the latest run."
                     )
                 else:
                     st.info("No client-level results available for this run.")
@@ -1253,12 +1454,28 @@ with tab_overview:
         with outcome_info:
             with st.container(border=True):
                 st.markdown('<div class="section-title">Run information</div>', unsafe_allow_html=True)
+                # Rounds only stopped the search for the centralized
+                # approach; Collaboration/Coordination now stop on
+                # --timeout instead (search runs until an exact
+                # solution or the timeout, whichever comes first — see
+                # FedPopper/srvpopper.py), so showing "Max rounds" for
+                # those was stale and misleading (rounds is still
+                # accepted for backward compatibility but no longer
+                # checked as a stop condition).
+                if metadata["approach"] in ("collaboration", "coordination", "consensus"):
+                    stop_condition_row = (
+                        "Timeout",
+                        f"{fmt(metadata.get('timeout'), 0)} s" if metadata.get("timeout") else "—",
+                    )
+                else:
+                    stop_condition_row = ("Max rounds", str(metadata.get("rounds") or "—"))
+
                 render_kv_rows(
                     [
                         ("Status", render_badge(metadata["status"])),
                         ("Total time", f"{fmt(summary.total_time.mean)} s"),
                         ("Runs", str(summary.number_of_runs)),
-                        ("Max rounds", str(metadata.get("rounds") or "—")),
+                        stop_condition_row,
                         ("Clients", str(metadata["number_of_clients"])),
                     ]
                 )
@@ -1297,19 +1514,23 @@ with tab_models:
             if not hypotheses:
                 st.caption("No saved hypotheses for this experiment.")
             else:
-                model_columns = st.columns(len(hypotheses))
+                MAX_COLUMNS_PER_ROW = 4
+                indexed_hypotheses = list(enumerate(hypotheses, start=1))
+                for row_start in range(0, len(indexed_hypotheses), MAX_COLUMNS_PER_ROW):
+                    row_items = indexed_hypotheses[row_start:row_start + MAX_COLUMNS_PER_ROW]
+                    model_columns = st.columns(len(row_items))
 
-                for column, (index, hypothesis) in zip(model_columns, enumerate(hypotheses, start=1)):
-                    with column:
-                        with st.container(border=True):
-                            st.markdown(f"**Client {index} — H{index}**")
-                            if hypothesis:
-                                st.code("\n".join(hypothesis), language="prolog")
-                            else:
-                                st.caption(
-                                    "Empty hypothesis — always votes negative, "
-                                    "still counts towards the majority."
-                                )
+                    for column, (index, hypothesis) in zip(model_columns, row_items):
+                        with column:
+                            with st.container(border=True):
+                                st.markdown(f"**Client {index} — H{index}**")
+                                if hypothesis:
+                                    st.code("\n".join(hypothesis), language="prolog")
+                                else:
+                                    st.caption(
+                                        "Empty hypothesis — always votes negative, "
+                                        "still counts towards the majority."
+                                    )
 
     else:
         st.markdown(
@@ -1346,27 +1567,96 @@ with tab_models:
                 st.write("")
                 st.markdown("**Client contribution to this hypothesis**")
 
-                contribution_columns = st.columns(len(run_client_rows))
+                MAX_COLUMNS_PER_ROW = 4
+                for row_start in range(0, len(run_client_rows), MAX_COLUMNS_PER_ROW):
+                    row_client_rows = run_client_rows[row_start:row_start + MAX_COLUMNS_PER_ROW]
+                    contribution_columns = st.columns(len(row_client_rows))
 
-                for column, client_row in zip(contribution_columns, run_client_rows):
-                    with column:
-                        with st.container(border=True):
-                            accepted = bool(client_row["accepted_solution"])
-                            epsilon_positive = client_row["final_epsilon_positive"] or "—"
-                            epsilon_negative = client_row["final_epsilon_negative"] or "—"
-                            local_tp = client_row["tp"] or 0
-                            local_fp = client_row["fp"] or 0
-                            local_positives = client_row["number_of_positive_examples"] or 0
-                            local_negatives = client_row["number_of_negative_examples"] or 0
-                            st.markdown(f"**Client {client_row['client_id']}**")
-                            st.caption(f"ε+ = {epsilon_positive}, ε− = {epsilon_negative}")
-                            st.caption(f"Score: {client_row['final_score']}")
-                            st.caption(f"Positive covered: {local_tp}/{local_positives}")
-                            st.caption(f"Negative covered: {local_fp}/{local_negatives}")
-                            st.markdown(
-                                render_badge("completed" if accepted else "pending"),
-                                unsafe_allow_html=True,
-                            )
+                    for column, client_row in zip(contribution_columns, row_client_rows):
+                        with column:
+                            with st.container(border=True):
+                                accepted = bool(client_row["accepted_solution"])
+                                epsilon_positive = client_row["final_epsilon_positive"] or "—"
+                                epsilon_negative = client_row["final_epsilon_negative"] or "—"
+                                local_tp = client_row["tp"] or 0
+                                local_fp = client_row["fp"] or 0
+                                local_positives = client_row["number_of_positive_examples"] or 0
+                                local_negatives = client_row["number_of_negative_examples"] or 0
+                                st.markdown(f"**Client {client_row['client_id']}**")
+                                st.caption(f"ε+ = {epsilon_positive}, ε− = {epsilon_negative}")
+                                st.caption(f"Score: {client_row['final_score']}")
+                                st.caption(f"Positive covered: {local_tp}/{local_positives}")
+                                st.caption(f"Negative covered: {local_fp}/{local_negatives}")
+                                st.markdown(
+                                    render_badge("completed" if accepted else "pending"),
+                                    unsafe_allow_html=True,
+                                )
+
+                hypothesis_log_rows = load_hypothesis_log(experiment_id)
+
+                if hypothesis_log_rows:
+                    st.write("")
+                    st.markdown("**Every hypothesis tested this run**")
+                    st.caption(
+                        "Sorted by score — confirms the hypothesis above "
+                        "really is the best-scoring one, not just the "
+                        "last one tried before stopping."
+                    )
+
+                    hypothesis_log_df = pd.DataFrame(hypothesis_log_rows)
+                    hypothesis_log_df = hypothesis_log_df.sort_values(
+                        "score",
+                        ascending=False,
+                    ).reset_index(drop=True)
+                    hypothesis_log_df["role"] = hypothesis_log_df[
+                        "is_final_validation"
+                    ].map(
+                        {1: "Final validation", 0: "Search"}
+                    )
+
+                    st.dataframe(
+                        hypothesis_log_df[
+                            [
+                                "sequence_number",
+                                "hypothesis",
+                                "score",
+                                "epsilon_positive",
+                                "epsilon_negative",
+                                "role",
+                            ]
+                        ].rename(
+                            columns={
+                                "sequence_number": "Program",
+                                "hypothesis": "Hypothesis",
+                                "score": "Score",
+                                "epsilon_positive": "ε+",
+                                "epsilon_negative": "ε−",
+                                "role": "Round type",
+                            }
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Program": st.column_config.NumberColumn(width="small"),
+                            # "large" here isn't about making the column
+                            # wider than the others by force — it's so
+                            # the grid gives it most of the leftover
+                            # width instead of Program/Score/ε±/Round
+                            # type, which only ever hold a few
+                            # characters. A long hypothesis still won't
+                            # always fit on one line: click the cell to
+                            # open it and scroll/select the full text.
+                            "Hypothesis": st.column_config.TextColumn(width="large"),
+                            "Score": st.column_config.NumberColumn(width="small"),
+                            "ε+": st.column_config.TextColumn(width="small"),
+                            "ε−": st.column_config.TextColumn(width="small"),
+                            "Round type": st.column_config.TextColumn(width="small"),
+                        },
+                    )
+                    st.caption(
+                        "Click a row's Hypothesis cell to expand it and "
+                        "see the full program if it doesn't fit on one line."
+                    )
 
 # --- Predictions tab (Consensus only — Collaboration / Coordination ------
 # --- don't record example-level predictions, so the tab doesn't exist) ---
@@ -1690,3 +1980,9 @@ with tab_dataset:
 
         with bias_tab:
             st.code(partition_content["bias"] or "—", language="prolog")
+
+
+st.markdown(
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    unsafe_allow_html=True,
+)

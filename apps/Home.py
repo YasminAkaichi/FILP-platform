@@ -10,6 +10,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Create the SQLite tables on first boot (CREATE TABLE IF NOT EXISTS, so
+# this is a no-op on every later run). Hosted platforms like Streamlit
+# Community Cloud only ever execute this file — there's no separate
+# "run initialize_db.py first" step like there is locally — so the app
+# has to self-initialize instead of relying on that script.
+from database.schema import initialize_database  # noqa: E402
+
+initialize_database()
+
 
 # ---------------------------------------------------------------------
 # Central navigation — page order, titles and (white, Material) icons

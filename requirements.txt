@@ -8,3 +8,4 @@ pandas
 parsimonious
 google-generativeai
 -e ./symbolic/andante
+-e ./symbolic/popper-core

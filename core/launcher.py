@@ -13,7 +13,8 @@ from partitioning.partitioner import partition_dataset
 from partitioning.writer import write_partitions
 from partitioning.splitter import split_train_test
 from partitioning.consensus_writer import write_consensus_dataset
-import json 
+from core.port_utils import find_free_port
+import json
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATASETS_DIR = PROJECT_ROOT / "datasets"
@@ -488,6 +489,23 @@ class ExperimentLauncher:
                     result=client_result,
                 )
 
+            hypothesis_log_path = (
+                experiment_directory
+                / "hypothesis_log.json"
+            )
+
+            if hypothesis_log_path.is_file():
+                hypothesis_log_entries = json.loads(
+                    hypothesis_log_path.read_text(
+                        encoding="utf-8"
+                    )
+                )
+
+                repository.save_hypothesis_log(
+                    experiment_id=experiment_id,
+                    entries=hypothesis_log_entries,
+                )
+
             print(
                 "\n[Launcher] Experiment completed successfully."
             )
@@ -925,10 +943,19 @@ class ExperimentLauncher:
                 "[Launcher] Starting Bach coordination store..."
             )
 
+            # A fresh port per run instead of the historical hardcoded
+            # 8000, so two Coordination experiments running at the same
+            # time (different users, or two tabs) each get their own
+            # Bach store instead of the second one failing to bind.
+            store_port = find_free_port()
+            store_address = f"127.0.0.1:{store_port}"
+
             store_process = subprocess.Popen(
                 [
                     sys.executable,
                     "bbpopper.py",
+                    "--port",
+                    str(store_port),
                 ],
                 cwd=bach_directory,
             )
@@ -971,7 +998,7 @@ class ExperimentLauncher:
                 str(config.timeout),
 
                 "--store-address",
-                "127.0.0.1:8000",
+                store_address,
 
                 "--timing-mode",
                 config.timing_mode,
@@ -1018,7 +1045,7 @@ class ExperimentLauncher:
                     str(client_dataset),
 
                     "--store-address",
-                    "127.0.0.1:8000",
+                    store_address,
 
                     "--output-dir",
                     str(experiment_directory),

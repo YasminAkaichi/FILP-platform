@@ -16,6 +16,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.benchmark import BenchmarkConfig
 from core.benchmark_launcher import BenchmarkLauncher
+from core.port_utils import find_free_port
+from database.repository import ExperimentRepository
+
+# How many experiments this server will run at the same time, across
+# every user. Each run spins up N+1 real OS subprocesses (a Flower
+# server plus one per client) and consumes real CPU/RAM, so on a small
+# shared/free-tier deployment this needs a hard ceiling rather than
+# letting every visitor launch simultaneously.
+MAX_CONCURRENT_EXPERIMENTS = 2
 
 DATASETS_DIRECTORY = PROJECT_ROOT / "datasets"
 
@@ -93,6 +102,9 @@ def inject_style() -> None:
         f"""
         <style>
         .block-container {{
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
             padding-top: 3rem;
             padding-bottom: 3rem;
             padding-left: 2.2rem;
@@ -783,6 +795,25 @@ elif current_step == 4:
     st.write("")
 
     if not st.session_state.get("_wizard_launched"):
+        running_count = ExperimentRepository().count_running_benchmarks()
+
+        if running_count >= MAX_CONCURRENT_EXPERIMENTS:
+            st.warning(
+                f"⏳ {running_count} experiment(s) are already running on this "
+                f"server right now (limit: {MAX_CONCURRENT_EXPERIMENTS} at a "
+                "time, so everyone testing the platform gets fair, stable "
+                "performance). Please wait a moment and try again."
+            )
+            if st.button("Check again"):
+                st.rerun()
+            st.stop()
+
+        # A fresh, unused port per launch — not a shared hardcoded one —
+        # so two experiments running at the same time (from the same
+        # user or different ones) don't fight over the same Flower
+        # server address. See core/port_utils.py.
+        server_port = find_free_port()
+
         config = BenchmarkConfig(
             name=st.session_state["wizard_name"].strip(),
             approach=method,
@@ -794,7 +825,7 @@ elif current_step == 4:
             learner=st.session_state["wizard_learner"],
             rounds=int(st.session_state["wizard_rounds"]),
             timeout=int(st.session_state["wizard_timeout"]),
-            server_address="localhost:8080",
+            server_address=f"localhost:{server_port}",
         )
 
         try:
@@ -857,3 +888,9 @@ elif current_step == 4:
                     st.session_state.pop(key, None)
                 st.session_state["wizard_step"] = 1
                 st.rerun()
+
+
+st.markdown(
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    unsafe_allow_html=True,
+)

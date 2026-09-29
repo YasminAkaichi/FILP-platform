@@ -1,0 +1,32 @@
+# Local build & run:  docker compose up --build
+# Then open http://localhost:7860
+#
+# Port 7860 matches Hugging Face Spaces' default (see README.md's `app_port`
+# in the Space's YAML block) so a local run behaves the same as the deployed
+# Space. This is for local testing only — Spaces builds the Dockerfile
+# itself and does not use this compose file.
+
+services:
+  filp:
+    build: .
+    ports:
+      - "7860:7860"
+    environment:
+      # Optional — the Custom ILP tab's AI features (background-knowledge
+      # parsing, dataset chat) degrade gracefully to a keyword parser
+      # without this; nothing else in the app needs it.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      # Keep experiment history and run artifacts across container
+      # restarts/rebuilds instead of losing them every time. On Hugging
+      # Face Spaces, the equivalent is a mounted Storage Bucket at /data —
+      # without one, Spaces wipes this on every restart (see the plan).
+      - filp_data:/home/user/app/data
+      - filp_artifacts:/home/user/app/artifacts
+      - filp_generated_datasets:/home/user/app/datasets/generated
+    restart: unless-stopped
+
+volumes:
+  filp_data:
+  filp_artifacts:
+  filp_generated_datasets:

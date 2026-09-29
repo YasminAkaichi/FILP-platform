@@ -1087,6 +1087,18 @@ def run_server(
     round_id = 0
     found_solution = False
 
+    # Distinct from found_solution: found_solution just means "the
+    # search loop is done" (true for TIMEOUT and exhausted-search too,
+    # where best_rules_str is only an approximate best-effort guess).
+    # exact_solution_found is true ONLY when a rule was found that
+    # perfectly separates the examples (outcome == ("all", "none")).
+    # Without this distinction, solution_found in the saved result —
+    # and therefore "Completed"/acceptance badges in the UI — was
+    # wrongly True any time best_rules_str existed at all, even for a
+    # best-effort hypothesis returned after a timeout or exhausted
+    # search that no client actually accepted locally.
+    exact_solution_found = False
+
     # Was hardcoded to 600 regardless of what the user configured — now
     # driven by --timeout, matching the Collaboration/Flower side.
     TIMEOUT = args.timeout
@@ -1266,6 +1278,7 @@ def run_server(
                     )
 
                     found_solution = True
+                    exact_solution_found = True
                     break
 
                 # ------------------------------------------
@@ -1476,7 +1489,7 @@ def run_server(
             "solution": (
                 "\n".join(best_rules_str) if best_rules_str else None
             ),
-            "solution_found": bool(best_rules_str),
+            "solution_found": exact_solution_found,
             "total_time": float(startup_time + global_time),
             "startup_time": float(startup_time),
             "learning_time": float(global_time),

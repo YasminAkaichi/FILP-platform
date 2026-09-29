@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from database.connection import get_connection
 from core.experiment import ExperimentConfig
@@ -26,10 +26,11 @@ class ExperimentRepository:
                     learner,
                     random_seed,
                     rounds,
+                    timeout,
                     server_address,
                     status
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now,
@@ -41,6 +42,7 @@ class ExperimentRepository:
                     config.learner,
                     config.random_seed,
                     config.rounds,
+                    getattr(config, "timeout", None),
                     config.server_address,
                     "RUNNING",
                 ),
@@ -185,6 +187,48 @@ class ExperimentRepository:
 
             conn.commit()
 
+    def save_hypothesis_log(
+        self,
+        experiment_id: int,
+        entries: list[dict],
+    ) -> None:
+        """Persist every hypothesis actually tested during the run, in
+        order, with its score — so "is the reported solution really the
+        best-scoring one?" can be checked directly in the UI."""
+
+        if not entries:
+            return
+
+        with get_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO hypothesis_log (
+                    experiment_id,
+                    sequence_number,
+                    hypothesis,
+                    score,
+                    epsilon_positive,
+                    epsilon_negative,
+                    is_final_validation
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        experiment_id,
+                        int(entry.get("sequence_number", 0)),
+                        str(entry.get("hypothesis", "")),
+                        float(entry.get("score") or 0.0),
+                        entry.get("epsilon_positive"),
+                        entry.get("epsilon_negative"),
+                        int(bool(entry.get("is_final_validation", False))),
+                    )
+                    for entry in entries
+                ],
+            )
+
+            conn.commit()
+
     def save_client_dataset_info(
         self,
         experiment_id: int,
@@ -300,6 +344,36 @@ class ExperimentRepository:
 
             conn.commit()
     
+    def count_running_benchmarks(self, stale_after_minutes: int = 60) -> int:
+        """How many benchmarks are currently RUNNING right now, across
+        every user — used as a shared, cross-session concurrency gate
+        before launching a new one. st.session_state alone can't do
+        this: it's scoped to a single browser session, so two different
+        people each see their own "nothing running yet" state even
+        while both are mid-launch.
+
+        A benchmark whose driving Streamlit session crashed, or whose
+        process was killed, never gets complete_benchmark()/
+        fail_benchmark() called on it and is left stuck at
+        status=RUNNING forever. Anything older than stale_after_minutes
+        is treated as abandoned rather than a real experiment still
+        blocking new launches, so one crash can't permanently lock the
+        platform.
+        """
+        cutoff = (
+            datetime.now() - timedelta(minutes=stale_after_minutes)
+        ).isoformat(timespec="seconds")
+
+        with get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT COUNT(*) FROM benchmarks
+                WHERE status = 'RUNNING' AND created_at >= ?
+                """,
+                (cutoff,),
+            )
+            return int(cursor.fetchone()[0])
+
     def create_benchmark(
     self,
     config: BenchmarkConfig,
@@ -320,10 +394,11 @@ class ExperimentRepository:
                     base_seed,
                     learner,
                     rounds,
+                    timeout,
                     server_address,
                     status
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     config.name,
@@ -336,6 +411,7 @@ class ExperimentRepository:
                     config.base_seed,
                     config.learner,
                     config.rounds,
+                    getattr(config, "timeout", None),
                     config.server_address,
                     "RUNNING",
                 ),

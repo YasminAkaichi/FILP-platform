@@ -171,7 +171,13 @@ def build_conversion_plan(
     generated/derived sample id (as a sanitized string), so callers can
     iterate `df.iterrows()` and know each row's sample id via the index.
     """
-    id_column = pick_id_column(df, exclude={target_column, *feature_columns} - {target_column})
+    # Only the target column is off-limits for id detection. The caller's
+    # feature_columns list is frequently "every column except the target"
+    # (the UI's own default), which — before this fix — always included an
+    # id-like column and excluded it right back out of id detection,
+    # so an obvious id column (e.g. "id", "patient_id") was never found
+    # and instead got binarized as a spurious numeric feature predicate.
+    id_column = pick_id_column(df, exclude={target_column})
     work = df.copy()
 
     if id_column is not None:
@@ -191,6 +197,13 @@ def build_conversion_plan(
     plans: list[ColumnPlan] = []
     for col in feature_columns:
         if col == target_column or col == id_column:
+            continue
+        if df[col].dropna().empty:
+            # Fully-empty column — e.g. the trailing "Unnamed: 32"-style
+            # column pandas creates from a stray trailing comma in a CSV
+            # header. Without this check it becomes a dead body_pred with
+            # zero facts: harmless to correctness, but it clutters the
+            # generated bias.pl and confuses anyone inspecting it.
             continue
         predicate = sanitize_identifier(col, fallback="feature")
         if is_boolean_like(df[col]):

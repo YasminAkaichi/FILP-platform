@@ -141,7 +141,7 @@ def resolve_dataset_path(dataset_argument: str) -> str:
 def print_final_solution(strategy: FedPopper) -> None:
     print("\n========== FINAL SOLUTION ==========")
 
-    if strategy.solution_params:
+    if strategy.exact_solution_found and strategy.solution_params:
         arrays = parameters_to_ndarrays(strategy.solution_params)
 
         if arrays and arrays[0].size > 0:
@@ -171,7 +171,13 @@ def save_server_result(
     )
 
     solution = None
-    solution_found = False
+    # exact_solution_found is only True when Popper actually found a
+    # rule with outcome == ("all", "none") — NOT just whenever
+    # solution_params is set, since that field also gets backfilled
+    # from best_hypothesis as a fallback on timeout/exhausted search
+    # (see FedPopper.aggregate_fit). Using solution_params truthiness
+    # here used to mark every best-effort run as "solution found".
+    solution_found = bool(strategy.exact_solution_found)
 
     if strategy.solution_params:
         arrays = parameters_to_ndarrays(
@@ -185,7 +191,6 @@ def save_server_result(
             ]
 
             solution = "\n".join(solution_rules)
-            solution_found = True
 
     elif strategy.best_hypothesis:
         solution_rules = [
@@ -257,6 +262,23 @@ def save_server_result(
     result_path.write_text(
         json.dumps(
             result,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    # Every hypothesis actually tested, in order, with its score — lets
+    # the launcher persist a record that "the reported solution is the
+    # best-scoring one" can be checked directly instead of trusted on
+    # faith or dug out of terminal logs.
+    hypothesis_log_path = (
+        output_directory
+        / "hypothesis_log.json"
+    )
+
+    hypothesis_log_path.write_text(
+        json.dumps(
+            strategy.hypothesis_log,
             indent=2,
         ),
         encoding="utf-8",

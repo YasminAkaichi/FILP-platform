@@ -103,6 +103,9 @@ def inject_style() -> None:
         f"""
         <style>
         .block-container {{
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
             padding-top: 1.5rem;
             padding-bottom: 3rem;
             padding-left: 2.2rem;
@@ -709,5 +712,7 @@ st.divider()
 # The "About the researcher" bio now lives on its own page (pages/08_About.py),
 # reachable from the sidebar — see that file for its content.
 
-st.write("")
-st.caption(f"© {RESEARCHER_NAME} · FILP Platform")
+st.markdown(
+    f'<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© {RESEARCHER_NAME} · FILP Platform</div>',
+    unsafe_allow_html=True,
+)

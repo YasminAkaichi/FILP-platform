@@ -1,0 +1,473 @@
+% =====================================================================
+% Section : Mécanisme de Popper en mode centralisé
+% Généré à partir d'une lecture directe du code source de popper-core
+% (symbolic/popper-core/popper/{loop,asp,generate,constrain,tester,util,core}.py
+%  et symbolic/popper-core/popper/lp/alan.pl), intégré dans la plateforme
+% FILP via engines/centralized/runner.py.
+% =====================================================================
+
+\section{Le mécanisme d'apprentissage centralisé de Popper}
+\label{sec:popper-centralise}
+
+Dans la configuration centralisée de la plateforme, l'apprentissage
+n'implique aucune communication réseau ni agrégation : un unique
+processus exécute directement la boucle d'apprentissage de
+Popper~\cite{cropper2021popper} sur l'ensemble du jeu de données
+(fichiers \texttt{bias.pl}, \texttt{bk.pl}, \texttt{exs.pl}), via
+\texttt{popper.util.Settings} et \texttt{popper.loop.learn\_solution}.
+Le moteur centralisé de la plateforme (\texttt{engines/centralized/}
+\texttt{runner.py}) n'est qu'un mince processus enfant : il ne fait
+qu'invoquer \texttt{learn\_solution(settings)} et sérialiser le résultat.
+Ce choix d'un sous-processus n'est pas anodin : le mécanisme de
+temporisation interne de Popper (voir~\S\ref{sec:popper-stop}) repose
+sur \texttt{signal.alarm()}, qui n'est utilisable que depuis le thread
+principal de l'interpréteur --- or les pages Streamlit de la plateforme
+s'exécutent dans un thread secondaire. Isoler Popper dans son propre
+processus lui redonne un thread principal légitime pour installer son
+gestionnaire \texttt{SIGALRM}.
+
+Popper implémente le paradigme \emph{generate, test, constrain}
+(génère, teste, contraint) : à chaque itération, un programme candidat
+est généré par résolution d'un problème de satisfaction de contraintes
+encodé en \emph{Answer Set Programming} (ASP, via le solveur
+Clingo~\cite{gebser2019multi}), puis testé contre les exemples positifs
+et négatifs, et enfin --- si le résultat n'est ni une solution exacte ni
+une impasse totale --- l'échec observé est traduit en une ou plusieurs
+\emph{contraintes} qui sont réinjectées dans le solveur ASP pour
+empêcher la regénération de programmes structurellement similaires.
+
+\subsection{Vue d'ensemble : la boucle principale}
+
+La fonction \texttt{popper()} (\texttt{loop.py}, lignes 195--252)
+orchestre une double boucle : une boucle externe sur la \emph{taille}
+du programme (nombre total de littéraux, tête et corps confondus) et,
+pour chaque taille, une boucle interne qui énumère tous les programmes
+ASP de cette taille jusqu'à épuisement (UNSAT), avant de passer à la
+taille suivante. Les contraintes accumulées au fil de l'exécution ne
+sont \textbf{jamais réinitialisées} entre deux tailles : le solveur ASP
+est un unique objet \texttt{clingo.Control} persistant pour toute la
+durée de la recherche, ce qui permet à Popper de tirer parti, à la
+taille $n+1$, de tout ce qu'il a appris en éliminant des hypothèses à la
+taille $n$.
+
+\begin{algorithm}[H]
+\caption{Boucle principale de Popper (\texttt{popper.loop.popper})}
+\label{alg:popper-loop}
+\begin{algorithmic}[1]
+\Require Réglages $\mathit{settings}$ (biais, exemples, connaissances de fond, $\mathit{max\_literals}$)
+\Ensure Un programme $P^\star$ (solution exacte ou meilleure approximation)
+\State $\mathit{solver} \gets \textsc{ClingoSolver}(\mathit{settings})$ \Comment{charge \texttt{alan.pl} + \texttt{bias.pl}}
+\State $\mathit{tester} \gets \textsc{Tester}(\mathit{settings})$ \Comment{moteur Prolog (SWI-Prolog via \texttt{pyswip})}
+\State $\mathit{grounder} \gets \textsc{ClingoGrounder}()$
+\State $\mathit{constrainer} \gets \textsc{Constrain}()$
+\State $\mathit{best\_score} \gets \bot$
+\For{$\mathit{size} = 1 \to \mathit{max\_literals}$} \Comment{itération sur la taille du programme}
+    \State $\mathit{solver}.\textsc{UpdateNumberOfLiterals}(\mathit{size})$
+    \While{\Call{True}{}}
+        \State \Comment{--- GÉNÉRATION ---}
+        \State $\mathit{model} \gets \mathit{solver}.\textsc{GetModel}()$
+        \If{$\mathit{model} = \varnothing$}
+            \State \textbf{break} \Comment{espace de recherche épuisé pour cette taille}
+        \EndIf
+        \State $(P, \mathit{before}, \mathit{min\_clause}) \gets \textsc{GenerateProgram}(\mathit{model})$
+        \State \Comment{--- TEST ---}
+        \State $(\mathit{tp}, \mathit{fn}, \mathit{tn}, \mathit{fp}) \gets \mathit{tester}.\textsc{Test}(P)$
+        \State $\mathit{outcome} \gets \textsc{DecideOutcome}(\mathit{tp}, \mathit{fn}, \mathit{tn}, \mathit{fp})$
+        \State $\mathit{score} \gets \mathit{tp} + \mathit{tn}$
+        \If{$\mathit{best\_score} = \bot \lor \mathit{score} > \mathit{best\_score}$}
+            \State $\mathit{best\_score} \gets \mathit{score}$
+            \If{$\mathit{outcome} = (\textsc{All}, \textsc{None})$} \Comment{complet ET cohérent}
+                \State \Return $P$ \Comment{solution exacte}
+            \EndIf
+            \State \textsc{Stats}.\textsc{RegisterBestProgram}($P$)
+        \EndIf
+        \State \Comment{--- CONTRAINTE ---}
+        \State $R \gets \textsc{BuildRules}(\mathit{constrainer}, \mathit{tester}, P, \mathit{before}, \mathit{min\_clause}, \mathit{outcome})$
+        \State $R_{\mathit{ground}} \gets \textsc{GroundRules}(\mathit{grounder}, R)$
+        \State $\mathit{solver}.\textsc{AddGroundClauses}(R_{\mathit{ground}})$
+    \EndWhile
+\EndFor
+\State \Return meilleur programme mémorisé (ou $\varnothing$ si aucun candidat n'a jamais été testé)
+\end{algorithmic}
+\end{algorithm}
+
+Trois conditions d'arrêt coexistent (\S\ref{sec:popper-stop}) : la
+découverte d'une solution exacte, l'épuisement de l'espace de recherche
+jusqu'à $\mathit{max\_literals}$, ou l'expiration du budget de temps
+alloué (\texttt{settings.timeout}, imposé par un \texttt{signal.alarm}
+enveloppant tout l'appel à \texttt{popper()}).
+
+\subsection{Phase de génération}
+\label{sec:popper-generate}
+
+\subsubsection{Encodage de l'espace des hypothèses en ASP}
+
+L'espace des programmes candidats est encodé par un méta-programme ASP
+fixe, \texttt{alan.pl} (chargé une fois par \texttt{ClingoSolver} au
+démarrage, avec le fichier de biais spécifique au jeu de données). Les
+principaux mécanismes qu'il définit sont~:
+
+\begin{itemize}
+  \item \textbf{Énumération des clauses.} Des règles de choix ASP
+    (notation \texttt{\{...\}}) devinent, pour chaque clause $C \in
+    \{0, \dots, \mathit{max\_clauses}-1\}$, quel littéral de tête
+    (\texttt{head\_literal/4}) et quels littéraux de corps
+    (\texttt{body\_literal/4}) elle contient, parmi les prédicats
+    déclarés dans \texttt{bias.pl} (\texttt{head\_pred/2},
+    \texttt{body\_pred/2}).
+  \item \textbf{Taille du corps.} Le prédicat \texttt{body\_size(C,N)}
+    compte les littéraux de corps distincts de la clause $C$ et une
+    contrainte impose $1 \le N \le \mathit{max\_body}$.
+  \item \textbf{Un seul littéral de tête par clause}, la clause $0$
+    doit toujours exister, les clauses sont utilisées dans un ordre
+    croissant, et les variables d'une clause sont utilisées dans un
+    ordre croissant --- ces contraintes structurelles éliminent la
+    redondance combinatoire due aux permutations équivalentes de
+    clauses/variables.
+  \item \textbf{Variables et arguments.} Les variables sont indexées
+    $0, \dots, \mathit{max\_vars}-1$ ; un script Python embarqué
+    (\texttt{\#script(python)}) énumère toutes les permutations de
+    variables de l'arité requise pour chaque littéral.
+  \item \textbf{Connexité, non-singularité, forme datalog.} Des
+    contraintes éliminent les variables déconnectées, les variables
+    singleton (sauf autorisation explicite) et les clauses non
+    \emph{range-restricted}.
+  \item \textbf{Typage et modes.} Les déclarations \texttt{type/2} et
+    \texttt{direction/2} du fichier de biais sont traduites en
+    contraintes \texttt{var\_type/3} et \texttt{direction\_/3},
+    garantissant que deux occurrences de la même position de variable
+    partagent un type cohérent, et qu'une notion de \emph{sûreté}
+    modale (variable liée par une entrée \texttt{+} ou produite par un
+    littéral entièrement en sortie) est respectée.
+  \item \textbf{Ordre partiel \texttt{before/2} et \texttt{min\_clause/2}.}
+    Précalculés pour encoder les contraintes d'ordre entre clauses
+    (utile notamment pour la récursion et l'invention de prédicats), et
+    réutilisés tels quels par le module de contrainte
+    (\S\ref{sec:popper-constrain}).
+\end{itemize}
+
+\subsubsection{Contrôle incrémental de la taille du programme}
+
+Plutôt que de re-sol\-veur/re-\allowbreak grounder tout l'espace des
+hypothèses à chaque taille, Popper utilise un \emph{atome externe}
+Clingo, ce qui permet de ne reconfigurer qu'une contrainte minuscule
+entre deux itérations, tout en conservant l'ensemble des règles
+grounded et des contraintes déjà apprises :
+\[
+  \texttt{\#external size\_in\_literals(n).}
+\]
+\[
+  \texttt{:- size\_in\_literals(n), \#sum\{K+1,Clause : body\_size(Clause,K)\} != n.}
+\]
+À chaque changement de taille, \texttt{update\_number\_of\_literals(size)}
+(1) désactive l'atome externe précédent, (2) instancie ce nouveau
+fragment de programme ASP paramétré par la nouvelle taille via
+\texttt{solver.ground(...)}, puis (3) active le nouvel atome externe
+\texttt{size\_in\_literals(size)}. Le coût de cette opération est
+indépendant de la taille de l'espace de recherche déjà exploré.
+
+\subsubsection{De l'ensemble-réponse au programme Popper}
+
+\texttt{ClingoSolver.get\_model()} demande au solveur incrémental le
+prochain \emph{answer set} et retourne les symboles \og montrés \fg{}
+(\texttt{head\_literal}, \texttt{body\_literal}, \texttt{before},
+\texttt{min\_clause}, \texttt{direction\_}). La fonction
+\texttt{generate\_program(model)} (\texttt{generate.py}) reconstruit
+alors, pour chaque identifiant de clause présent dans le modèle, un
+littéral de tête et un ensemble (frozenset) de littéraux de corps
+Popper, avec leurs modes (\texttt{+}/\texttt{-}) dérivés des atomes
+\texttt{direction\_}, ainsi que les structures auxiliaires
+$\mathit{before}$ et $\mathit{min\_clause}$ qui seront transmises telles
+quelles au module de contrainte.
+
+\subsection{Phase de test}
+\label{sec:popper-test}
+
+Le test d'un programme candidat $P$ est délégué à un moteur Prolog réel
+(SWI-Prolog, piloté depuis Python via \texttt{pyswip}). Au démarrage, le
+\texttt{Tester} consulte dans l'ordre le fichier d'exemples, le fichier
+de connaissances de fond, puis un méta-programme Prolog interne
+(\texttt{test.pl}) qui définit notamment \texttt{success\_set/1}. Les
+index des exemples positifs et négatifs sont extraits une fois pour
+toutes (\texttt{self.pos}, \texttt{self.neg}).
+
+\begin{itemize}
+  \item Si toutes les clauses de $P$ sont \emph{séparables} (non
+    récursives et n'impliquant aucun prédicat inventé), la couverture
+    est calculée clause par clause puis unie --- une optimisation
+    valide car des clauses séparables ne peuvent interagir entre elles.
+  \item Sinon, le programme entier est asserté temporairement dans la
+    base Prolog vivante (via un gestionnaire de contexte qui retire les
+    clauses après usage), et \texttt{success\_set(Xs)} est interrogé
+    une seule fois sur l'ensemble du programme.
+\end{itemize}
+
+La matrice de confusion $(\mathit{tp}, \mathit{fn}, \mathit{tn},
+\mathit{fp})$ est alors calculée en comparant l'ensemble des exemples
+couverts (prouvés par $P$) à \texttt{self.pos}/\texttt{self.neg} :
+
+\[
+  \mathit{tp} = |\mathit{pos} \cap \mathit{covered}|, \quad
+  \mathit{fn} = |\mathit{pos} \setminus \mathit{covered}|, \quad
+  \mathit{fp} = |\mathit{neg} \cap \mathit{covered}|, \quad
+  \mathit{tn} = |\mathit{neg} \setminus \mathit{covered}|
+\]
+
+Deux prédicats auxiliaires évaluent une \emph{clause isolée} (et non le
+programme entier) --- utilisés par la phase de contrainte pour un
+raffinement plus fin quand $|P| > 1$ :
+\[
+  \textsc{IsTotallyIncomplete}(c) \iff \text{$c$ est séparable} \land
+    \nexists\, x \in \mathit{pos} : x \in \mathit{success\_set}(\{c\})
+\]
+\[
+  \textsc{IsInconsistent}(c) \iff \text{$c$ est séparable} \land
+    \exists\, x \in \mathit{neg} : x \in \mathit{success\_set}(\{c\})
+\]
+
+\subsection{Décision de l'issue et score}
+\label{sec:popper-outcome}
+
+À partir de la matrice de confusion, \texttt{decide\_outcome} classe
+séparément la couverture positive et la cohérence négative en trois
+niveaux qualitatifs $\{\textsc{All}, \textsc{Some}, \textsc{None}\}$ :
+
+\[
+  \mathit{outcome}^+ =
+  \begin{cases}
+    \textsc{All}  & \text{si } \mathit{fn} = 0 \quad\text{(complet)} \\
+    \textsc{None} & \text{si } \mathit{tp} = 0 \land \mathit{fn} > 0 \quad\text{(totalement incomplet)} \\
+    \textsc{Some} & \text{sinon} \quad\text{(partiellement complet)}
+  \end{cases}
+\]
+\[
+  \mathit{outcome}^- =
+  \begin{cases}
+    \textsc{None} & \text{si } \mathit{fp} = 0 \quad\text{(cohérent)} \\
+    \textsc{Some} & \text{sinon} \quad\text{(incohérent)}
+  \end{cases}
+\]
+
+Le score utilisé pour retenir la \og meilleure hypothèse vue jusqu'ici \fg{}
+est une simple exactitude non normalisée :
+\[
+  \mathit{score}(P) = \mathit{tp} + \mathit{tn}
+\]
+Une solution exacte est caractérisée par
+$(\mathit{outcome}^+, \mathit{outcome}^-) = (\textsc{All}, \textsc{None})$,
+c'est-à-dire $\mathit{fn} = \mathit{fp} = 0$ : le programme couvre tous
+les exemples positifs et aucun exemple négatif. C'est la seule condition
+qui provoque un retour immédiat de \texttt{popper()} --- toute autre
+issue, même avec un score élevé, ne fait que mettre à jour le meilleur
+programme mémorisé et alimente la phase de contrainte.
+
+\subsection{Phase de contrainte}
+\label{sec:popper-constrain}
+
+C'est le cœur du mécanisme \og apprendre de ses échecs \fg{} de Popper :
+chaque issue $(\mathit{outcome}^+, \mathit{outcome}^-)$ est associée à
+un sous-ensemble de types de contraintes à ajouter à l'espace de
+recherche ASP (table \texttt{OUTCOME\_TO\_CONSTRAINTS}, \texttt{loop.py}) :
+
+\begin{table}[H]
+\centering
+\caption{Correspondance issue $\to$ contraintes générées}
+\label{tab:outcome-constraints}
+\begin{tabular}{@{}llll@{}}
+\toprule
+$\mathit{outcome}^+$ & $\mathit{outcome}^-$ & Interprétation & Contrainte(s) ajoutée(s) \\
+\midrule
+\textsc{All}  & \textsc{None} & solution exacte & (arrêt --- \textsc{Banish} en secours) \\
+\textsc{All}  & \textsc{Some} & complet, incohérent & \textsc{Généralisation} \\
+\textsc{Some} & \textsc{None} & incomplet, cohérent & \textsc{Spécialisation} \\
+\textsc{Some} & \textsc{Some} & incomplet, incohérent & \textsc{Spécialisation} + \textsc{Généralisation} \\
+\textsc{None} & \textsc{None} & totalement incomplet, cohérent & \textsc{Spécialisation} + \textsc{Redondance} \\
+\textsc{None} & \textsc{Some} & totalement incomplet, incohérent & \textsc{Spécialisation} + \textsc{Redondance} + \textsc{Généralisation} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La logique sous-jacente : une hypothèse \emph{déjà complète} mais
+incohérente ne peut être corrigée qu'en la rendant plus spécifique ---
+or Popper choisit ici de bannir ses \emph{généralisations} futures (une
+généralisation resterait au moins aussi incohérente). Symétriquement,
+une hypothèse \emph{incomplète} ne peut gagner en couverture qu'en
+restant aussi générale ou en le devenant davantage --- ses
+\emph{spécialisations} sont donc bannies (une spécialisation ne peut
+que perdre de la couverture). Une hypothèse \emph{totalement}
+incomplète (ne couvre aucun positif) est de plus un candidat naturel à
+l'élimination \emph{redondante} : la garder ne peut qu'ajouter du bruit
+au programme final.
+
+Chaque générateur de contrainte (\texttt{Constrain.banish\_constraint},
+\texttt{generalisation\_constraint}, \texttt{specialisation\_constraint},
+\texttt{redundancy\_constraint}) construit, non pas des faits concrets,
+mais des \emph{règles ASP abstraites} paramétrées par des
+métavariables (\texttt{ConstVar}) représentant des numéros de clause ou
+des identifiants de variable encore non fixés. Ces règles définissent un
+prédicat auxiliaire \texttt{included\_clause/2} liant un \og gabarit \fg{}
+de clause concret à tout numéro de clause qui l'instancierait, plus une
+contrainte d'intégrité interdisant la re-génération de cette forme (ou
+d'un sur-ensemble/sous-ensemble selon le type de contrainte). En
+particulier :
+
+\begin{itemize}
+  \item \textsc{Banish} fixe le nombre exact de clauses du programme
+    (via un littéral négatif sur \texttt{clause/1}) --- élimine
+    précisément ce programme.
+  \item \textsc{Généralisation} omet cette contrainte de cardinalité :
+    la règle s'applique donc aussi à tout programme qui
+    \emph{contiendrait} ce même jeu de clauses parmi d'autres --- ce
+    qui, combiné à l'ordre imposé par le solveur, revient à interdire
+    toute généralisation ultérieure de ce jeu de clauses.
+  \item \textsc{Spécialisation} refixe la cardinalité exacte comme
+    \textsc{Banish}, empêchant la re-dérivation de cette forme à la
+    taille de programme courante --- les spécialisations, qui
+    nécessitent des littéraux supplémentaires (donc une taille de
+    programme strictement supérieure), sont ainsi naturellement
+    repoussées, puis exclues, par la croissance de la contrainte
+    \texttt{included\_clause}.
+  \item \textsc{Redondance} calcule, pour chaque prédicat de tête
+    apparaissant dans $P$, sa multiplicité (nombre de clauses) et sa
+    dépendance récursive (via une clôture par point fixe), afin
+    d'exclure de l'élagage tout prédicat impliqué dans une boucle de
+    récursion, puis interdit toute forme conservant ce clause
+    manifestement inutile.
+\end{itemize}
+
+Au-delà de la contrainte globale associée à l'issue du programme entier,
+\texttt{build\_rules} affine encore le raisonnement \emph{clause par
+clause} lorsque $|P| > 1$ : toute clause séparable jugée
+\textsc{IsInconsistent} reçoit individuellement une contrainte de
+\textsc{Généralisation} (même si l'issue globale du programme était
+différente), et --- si toutes les clauses du programme sont séparables
+--- toute clause jugée \textsc{IsTotallyIncomplete} reçoit
+individuellement une contrainte de \textsc{Redondance}. Ce mécanisme
+permet à Popper d'isoler et de pénaliser une clause fautive au sein d'un
+programme à plusieurs clauses, sans nécessairement bannir tout le
+programme.
+
+\subsection{Phases de mise à terre (\emph{grounding}) et d'ajout}
+\label{sec:popper-ground-add}
+
+Les contraintes produites ci-dessus mélangent des littéraux ordinaires
+et des \emph{méta-littéraux} (\texttt{AllDifferent}, $<$, $=$, $\ge$)
+exprimés sur des métavariables symboliques. \texttt{ClingoGrounder}
+résout ce petit problème de satisfaction de contraintes annexe : il
+construit et résout un mini-programme ASP qui affecte à chaque
+métavariable de clause une valeur dans $\{0,\dots,\mathit{max\_clauses}-1\}$
+et à chaque métavariable de variable une valeur dans
+$\{0,\dots,\mathit{max\_vars}-1\}$, sous les contraintes exprimées par
+les méta-littéraux, et énumère \emph{toutes} les affectations valides.
+Chaque affectation permet d'instancier (\emph{ground}) la règle
+abstraite en une règle ASP concrète.
+
+Enfin, \texttt{ClingoSolver.add\_ground\_clauses} utilise l'API
+\emph{backend} bas niveau de Clingo pour injecter directement ces
+règles concrètes dans le programme grounded du solveur, sans repasser
+par un parseur ASP textuel --- chaque littéral est converti en atome
+backend (mémoïsé pour éviter les doublons), puis chaque règle est
+ajoutée comme contrainte d'intégrité ($\mathit{head} = \varnothing$) ou
+comme règle définissant \texttt{included\_clause/2}. Ces règles
+persistent dans l'unique objet \texttt{clingo.Control} pour le reste de
+l'exécution, à toutes les tailles de programme suivantes.
+
+\subsection{Conditions d'arrêt}
+\label{sec:popper-stop}
+
+Le mode centralisé n'ajoute \textbf{aucune} condition d'arrêt propre à
+la plateforme : il expose directement la sémantique native de
+\texttt{popper()}/\texttt{learn\_solution()} :
+
+\begin{enumerate}
+  \item \textbf{Solution exacte} --- retour immédiat dès qu'un
+    programme atteint $(\textsc{All}, \textsc{None})$.
+  \item \textbf{Espace de recherche épuisé} --- la boucle externe
+    atteint $\mathit{max\_literals}$ (défaut~: 100) sans qu'aucune
+    solution exacte n'ait été trouvée ; le meilleur programme mémorisé
+    (par score $\mathit{tp}+\mathit{tn}$) est retourné.
+  \item \textbf{Expiration du délai} --- \texttt{learn\_solution()}
+    enveloppe l'appel à \texttt{popper()} dans un minuteur basé sur
+    \texttt{signal.alarm()} (\texttt{settings.timeout}, défaut 600~s) ;
+    à l'expiration, l'exécution est interrompue et le meilleur
+    programme mémorisé jusque-là est retourné.
+\end{enumerate}
+
+Le nombre de \og rounds \fg{} n'a ici aucun sens fédéré : la
+plateforme fixe simplement \texttt{number\_of\_rounds = 1} dans le
+résultat sérialisé, puisqu'il n'existe qu'un seul processus
+d'apprentissage, sans notion d'agrégation entre clients.
+
+\subsection{Le fichier de biais~: un exemple concret}
+\label{sec:popper-bias}
+
+\begin{lstlisting}[language=Prolog, basicstyle=\small\ttfamily, breaklines=true, caption={Extrait d'un \texttt{bias.pl} (jeu de données \emph{trains})}]
+max_clauses(4).
+max_vars(3).
+max_body(5).
+
+head_pred(f,1).
+body_pred(has_car,2).
+body_pred(has_load,2).
+body_pred(short,1).
+body_pred(long,1).
+body_pred(two_wheels,1).
+body_pred(three_wheels,1).
+body_pred(roof_open,1).
+body_pred(roof_closed,1).
+body_pred(zero_load,1).
+body_pred(one_load,1).
+body_pred(two_load,1).
+body_pred(three_load,1).
+body_pred(circle,1).
+body_pred(triangle,1).
+body_pred(rectangle,1).
+
+type(f,(train,)).
+type(has_car,(train,car)).
+type(has_load,(car,load)).
+type(short,(car,)).
+% ... une ligne type/2 par predicat, donnant le type semantique
+% de chaque argument.
+
+:-
+    clause(C),
+    #count{V : var_type(C,V,train)} != 1.
+\end{lstlisting}
+
+Les trois premières lignes bornent directement la taille de l'espace de
+recherche exploré par \texttt{ClingoSolver}/\texttt{ClingoGrounder}
+(nombre maximal de clauses, de variables distinctes, et de littéraux de
+corps par clause). \texttt{head\_pred/2} déclare l'unique prédicat
+cible appris (ici \texttt{f/1}, classification d'un train), et
+\texttt{body\_pred/2} énumère les 15 prédicats de fond utilisables dans
+le corps des clauses. Les déclarations \texttt{type/2} imposent que
+deux occurrences de la même position de variable partagent un type
+sémantique cohérent (empêchant, par exemple, de confondre une variable
+de type \texttt{train} avec une variable de type \texttt{car}). La
+contrainte ASP finale, spécifique à ce jeu de données et \emph{non}
+issue du méta-programme générique \texttt{alan.pl}, illustre que
+\texttt{bias.pl} peut porter des règles d'intégrité arbitraires,
+grounded et appliquées exactement comme celles d'\texttt{alan.pl} : ici,
+elle force chaque clause apprise à lier exactement une variable de type
+\texttt{train}, empêchant les clauses dégénérées ne portant sur aucun
+train ou sur plusieurs simultanément.
+
+% ---------------------------------------------------------------------
+% Bibliographie minimale associée à cette section (à fusionner avec
+% votre fichier .bib existant si les clés diffèrent).
+% ---------------------------------------------------------------------
+%
+% @inproceedings{cropper2021popper,
+%   title     = {Learning programs by learning from failures},
+%   author    = {Cropper, Andrew and Morel, Rolf},
+%   booktitle = {Machine Learning},
+%   year      = {2021}
+% }
+%
+% @article{gebser2019multi,
+%   title   = {Multi-shot ASP solving with clingo},
+%   author  = {Gebser, Martin and Kaminski, Roland and Kaufmann, Benjamin and Schaub, Torsten},
+%   journal = {Theory and Practice of Logic Programming},
+%   year    = {2019}
+% }

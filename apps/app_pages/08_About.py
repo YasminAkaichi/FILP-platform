@@ -77,6 +77,9 @@ st.markdown(
     f"""
     <style>
     .block-container {{
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
         padding-top: 3rem;
         padding-bottom: 3rem;
         padding-left: 2.2rem;
@@ -290,3 +293,9 @@ with bio_column:
         + render_contact_pill(ICON_GITHUB, "GitHub", GITHUB_URL, "#1F2430"),
         unsafe_allow_html=True,
     )
+
+
+st.markdown(
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    unsafe_allow_html=True,
+)

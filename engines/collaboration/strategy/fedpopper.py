@@ -159,6 +159,28 @@ class FedPopper(Strategy):
         self.best_hypothesis = None
         self.solution_params = None
         self.early_stop      = False
+
+        # Distinct from `self.solution_params` being truthy:
+        # solution_params also gets backfilled from best_hypothesis as
+        # a fallback whenever early_stop fires without an exact match
+        # (see aggregate_fit / _reject_round_and_continue below), so
+        # Flower always has *something* valid to return. That fallback
+        # made server.py's save_server_result() treat every timeout or
+        # exhausted-search run — approximate best-effort hypothesis
+        # included — as "solution_found = True", which then showed as
+        # a false "Completed" run in the UI even though no client
+        # locally accepted the reported hypothesis. exact_solution_found
+        # is set True in exactly one place: the real
+        # outcome == ("all", "none") match below.
+        self.exact_solution_found = False
+
+        # Every hypothesis Popper actually tests against the clients,
+        # in order, with its score — so "is the reported solution really
+        # the best-scoring one?" can be checked directly instead of
+        # trusted on faith or dug out of terminal logs. Written to
+        # hypothesis_log.json by save_server_result() and persisted to
+        # the hypothesis_log DB table by the launcher.
+        self.hypothesis_log: list[dict] = []
         self.startup_time = None
         self.learning_start = None
         self.learning_time = None
@@ -304,7 +326,18 @@ class FedPopper(Strategy):
                     
                     log(INFO, f"outcome={outcome}, score={fed_score}")
 
-                    
+                    self.hypothesis_log.append(
+                        {
+                            "sequence_number": len(self.hypothesis_log) + 1,
+                            "hypothesis": "\n".join(
+                                Clause.to_code(r) for r in program
+                            ),
+                            "score": float(fed_score),
+                            "epsilon_positive": str(outcome[0]),
+                            "epsilon_negative": str(outcome[1]),
+                            "is_final_validation": False,
+                        }
+                    )
 
                     # UPDATE BEST
                     if self.best_score is None or fed_score > self.best_score:
@@ -319,9 +352,10 @@ class FedPopper(Strategy):
                             dtype="<U1000"
                         )
                         self.solution_params = ndarrays_to_parameters([rules_arr])
+                        self.exact_solution_found = True
                         self.early_stop = True
                         self._hyp_ready.set()  # débloque configure_fit
-                       
+
                         return
 
                     # BUILD / GROUND / ADD
@@ -437,6 +471,19 @@ class FedPopper(Strategy):
         log(
             INFO,
             f"[Final validation] outcome={outcome}, score={fed_score}",
+        )
+
+        self.hypothesis_log.append(
+            {
+                "sequence_number": len(self.hypothesis_log) + 1,
+                "hypothesis": "\n".join(
+                    Clause.to_code(r) for r in self.best_hypothesis
+                ),
+                "score": float(fed_score),
+                "epsilon_positive": str(outcome[0]),
+                "epsilon_negative": str(outcome[1]),
+                "is_final_validation": True,
+            }
         )
 
     def _send_and_wait(self, program):

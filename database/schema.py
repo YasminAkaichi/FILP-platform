@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     learner TEXT NOT NULL,
     random_seed INTEGER NOT NULL,
     rounds INTEGER NOT NULL,
+    timeout REAL,
     server_address TEXT NOT NULL,
 
     status TEXT NOT NULL,
@@ -130,10 +131,28 @@ CREATE TABLE IF NOT EXISTS benchmarks (
     base_seed INTEGER NOT NULL,
     learner TEXT NOT NULL,
     rounds INTEGER NOT NULL,
+    timeout REAL,
     server_address TEXT NOT NULL,
 
     status TEXT NOT NULL,
     error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS hypothesis_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    experiment_id INTEGER NOT NULL,
+    sequence_number INTEGER NOT NULL,
+
+    hypothesis TEXT NOT NULL,
+    score REAL,
+    epsilon_positive TEXT,
+    epsilon_negative TEXT,
+    is_final_validation INTEGER NOT NULL DEFAULT 0,
+
+    FOREIGN KEY (experiment_id)
+        REFERENCES experiments(id)
+        ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS benchmark_runs (
@@ -163,27 +182,42 @@ def _migrate_existing_tables(connection) -> None:
     already created. CREATE TABLE IF NOT EXISTS above only helps for
     brand new databases; existing ones need an explicit ALTER TABLE."""
 
-    existing_columns = {
-        row[1]
-        for row in connection.execute(
-            "PRAGMA table_info(client_results)"
-        ).fetchall()
+    per_table_migrations = {
+        "client_results": {
+            "total_evaluate_phase_wall_seconds": (
+                "ALTER TABLE client_results "
+                "ADD COLUMN total_evaluate_phase_wall_seconds REAL"
+            ),
+            "total_evaluate_phase_cpu_seconds": (
+                "ALTER TABLE client_results "
+                "ADD COLUMN total_evaluate_phase_cpu_seconds REAL"
+            ),
+        },
+        # `rounds` used to be the real stopping condition for every
+        # approach (hence the old "Max rounds" display everywhere).
+        # Collaboration/Coordination now stop on --timeout instead (see
+        # FedPopper/srvpopper.py), but that value was never persisted —
+        # only passed as a transient CLI arg at launch time — so past
+        # runs had no way to show what timeout was actually used.
+        "experiments": {
+            "timeout": "ALTER TABLE experiments ADD COLUMN timeout REAL",
+        },
+        "benchmarks": {
+            "timeout": "ALTER TABLE benchmarks ADD COLUMN timeout REAL",
+        },
     }
 
-    migrations = {
-        "total_evaluate_phase_wall_seconds": (
-            "ALTER TABLE client_results "
-            "ADD COLUMN total_evaluate_phase_wall_seconds REAL"
-        ),
-        "total_evaluate_phase_cpu_seconds": (
-            "ALTER TABLE client_results "
-            "ADD COLUMN total_evaluate_phase_cpu_seconds REAL"
-        ),
-    }
+    for table_name, migrations in per_table_migrations.items():
+        existing_columns = {
+            row[1]
+            for row in connection.execute(
+                f"PRAGMA table_info({table_name})"
+            ).fetchall()
+        }
 
-    for column_name, statement in migrations.items():
-        if column_name not in existing_columns:
-            connection.execute(statement)
+        for column_name, statement in migrations.items():
+            if column_name not in existing_columns:
+                connection.execute(statement)
 
 
 def initialize_database() -> None:

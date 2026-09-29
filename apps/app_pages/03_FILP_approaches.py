@@ -67,6 +67,9 @@ def inject_style() -> None:
         f"""
         <style>
         .block-container {{
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
             padding-top: 3rem;
             padding-bottom: 3rem;
             padding-left: 2.2rem;
@@ -917,3 +920,8 @@ with consensus_tab:
             "Artificial Intelligence for the Medical Domain (EXPLIMED "
             "2025), CEUR Workshop Proceedings, Vol. 4059, Bologna, Italy."
         )
+
+st.markdown(
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    unsafe_allow_html=True,
+)
