@@ -353,6 +353,8 @@ def main() -> None:
         fit_metrics_aggregation_fn=None,
         with_suspension=(args.timing_mode == "wall"),
         timeout_seconds=args.timeout,
+        # "Stop" button: the UI writes <output-dir>/STOP (core/run_control.py)
+        stop_file=os.path.join(args.output_dir, "STOP"),
     )
 
     log(

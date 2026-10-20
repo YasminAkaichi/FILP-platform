@@ -120,8 +120,14 @@ class FedMDL(Strategy):
         with_suspension: bool = True,
         timeout_seconds: float = 600.0,
         combine_mode: str = "indices",
+        stop_file: str | None = None,
     ):
         super().__init__()
+
+        # Path of the STOP file the UI writes on "Stop" (core/run_control.py).
+        # Treated like a timeout: the search ends, a last combine runs and
+        # the best program found so far is returned.
+        self.stop_file = stop_file
 
         if combine_mode not in ("indices", "signatures"):
             raise ValueError(f"combine_mode must be 'indices' or 'signatures', got {combine_mode!r}")
@@ -271,6 +277,10 @@ class FedMDL(Strategy):
     #   signature tables over the pool and ONE combine runs at the end.
     # ------------------------------------------------------------------
 
+    def _stop_requested(self) -> bool:
+        import os
+        return bool(self.stop_file) and os.path.exists(self.stop_file)
+
     def _fedmdl_loop(self) -> None:
         wall_start = self.timer()
 
@@ -321,7 +331,7 @@ class FedMDL(Strategy):
                 generator.update_solver(size, self.settings.max_vars, self.settings.max_rules)
 
                 while True:
-                    if self.timer() - wall_start > self.timeout_seconds:
+                    if self.timer() - wall_start > self.timeout_seconds or self._stop_requested():
                         raise StopIteration
 
                     if size > self._size_cap:

@@ -52,7 +52,9 @@ class ExperimentRepository:
 
             return cursor.lastrowid
 
-    def complete_experiment(self, experiment_id: int):
+    def complete_experiment(self, experiment_id: int, note: str | None = None):
+        """note: optional remark kept in error_message (a run stopped by the
+        user with its best result so far is COMPLETED, with a note)."""
 
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -63,12 +65,40 @@ class ExperimentRepository:
                 UPDATE experiments
                 SET
                     completed_at = ?,
-                    status = ?
+                    status = ?,
+                    error_message = ?
                 WHERE id = ?
                 """,
                 (
                     now,
                     "COMPLETED",
+                    note,
+                    experiment_id,
+                ),
+            )
+
+            conn.commit()
+
+    def stop_experiment(self, experiment_id: int, message: str):
+        """The user pressed "Stop" and no result was available."""
+
+        now = datetime.now().isoformat(timespec="seconds")
+
+        with get_connection() as conn:
+
+            conn.execute(
+                """
+                UPDATE experiments
+                SET
+                    completed_at = ?,
+                    status = ?,
+                    error_message = ?
+                WHERE id = ?
+                """,
+                (
+                    now,
+                    "STOPPED",
+                    message,
                     experiment_id,
                 ),
             )
@@ -156,9 +186,10 @@ class ExperimentRepository:
                     tp,
                     fn,
                     tn,
-                    fp
+                    fp,
+                    clause_coverage
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
@@ -182,6 +213,7 @@ class ExperimentRepository:
                     result.fn,
                     result.tn,
                     result.fp,
+                    result.clause_coverage,
                 ),
             )
 
@@ -459,6 +491,7 @@ class ExperimentRepository:
     def complete_benchmark(
         self,
         benchmark_id: int,
+        note: str | None = None,
     ) -> None:
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -468,12 +501,42 @@ class ExperimentRepository:
                 UPDATE benchmarks
                 SET
                     completed_at = ?,
-                    status = ?
+                    status = ?,
+                    error_message = ?
                 WHERE id = ?
                 """,
                 (
                     now,
                     "COMPLETED",
+                    note,
+                    benchmark_id,
+                ),
+            )
+
+            conn.commit()
+
+    def stop_benchmark(
+        self,
+        benchmark_id: int,
+        message: str,
+    ) -> None:
+        """The user pressed "Stop" before any run produced a result."""
+        now = datetime.now().isoformat(timespec="seconds")
+
+        with get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE benchmarks
+                SET
+                    completed_at = ?,
+                    status = ?,
+                    error_message = ?
+                WHERE id = ?
+                """,
+                (
+                    now,
+                    "STOPPED",
+                    message,
                     benchmark_id,
                 ),
             )

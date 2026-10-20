@@ -129,6 +129,7 @@ class FedPopper(Strategy):
     accept_failures: bool = False,
     with_suspension: bool = True,
     timeout_seconds: float = 600.0,
+    stop_file: str | None = None,
 
     ):
         super().__init__()
@@ -154,6 +155,10 @@ class FedPopper(Strategy):
         self.fit_metrics_aggregation_fn = fit_metrics_aggregation_fn
         self.accept_failures = accept_failures
         self.timeout_seconds = timeout_seconds
+        # Path of the STOP file the UI writes when the user presses "Stop"
+        # (core/run_control.py). Treated exactly like a timeout: the search
+        # ends and the best hypothesis found so far is returned.
+        self.stop_file = stop_file
 
         self.best_score      = None
         self.best_hypothesis = None
@@ -242,6 +247,10 @@ class FedPopper(Strategy):
     # Tourne dans un thread séparé.
     # Remplace federated_test() par _send_and_wait()
     # ------------------------------------------------------------------
+    def _stop_requested(self) -> bool:
+        import os
+        return bool(self.stop_file) and os.path.exists(self.stop_file)
+
     def _popper_loop(self):
         import time
         wall_start = time.perf_counter()
@@ -263,9 +272,9 @@ class FedPopper(Strategy):
 
                 while True:
 
-                    # TIMEOUT
-                    if time.perf_counter() - wall_start > TIMEOUT:
-                        log(INFO, "TIMEOUT reached.")
+                    # TIMEOUT, or a STOP requested by the user
+                    if time.perf_counter() - wall_start > TIMEOUT or self._stop_requested():
+                        log(INFO, "TIMEOUT reached or STOP requested.")
                         self._send_best_hypothesis_for_final_validation()
                         self.early_stop = True
                         self._hyp_ready.set()

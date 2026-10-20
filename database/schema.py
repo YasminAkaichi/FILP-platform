@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS client_results (
     tn INTEGER,
     fp INTEGER,
 
+    clause_coverage TEXT,
+
     UNIQUE (experiment_id, client_id),
 
     FOREIGN KEY (experiment_id)
@@ -191,6 +193,10 @@ def _migrate_existing_tables(connection) -> None:
             "total_evaluate_phase_cpu_seconds": (
                 "ALTER TABLE client_results "
                 "ADD COLUMN total_evaluate_phase_cpu_seconds REAL"
+            ),
+            "clause_coverage": (
+                "ALTER TABLE client_results "
+                "ADD COLUMN clause_coverage TEXT"
             ),
         },
         # `rounds` used to be the real stopping condition for every

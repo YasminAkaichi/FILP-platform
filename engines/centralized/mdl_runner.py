@@ -82,8 +82,15 @@ def main() -> None:
         noisy=True,
     )
 
+    # "Stop" button: pressing it makes Popper-v3 return its best program so
+    # far, exactly as its own timeout would (see stop_support.py).
+    from engines.centralized.stop_support import install_stop_watcher, search_running
+
+    install_stop_watcher(output_directory)
+
     start_time = time.perf_counter()
-    program, score, stats = learn_solution(settings)
+    with search_running():
+        program, score, stats = learn_solution(settings)
     total_time = time.perf_counter() - start_time
 
     solution_found = program is not None

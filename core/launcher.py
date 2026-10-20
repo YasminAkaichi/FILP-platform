@@ -14,6 +14,7 @@ from partitioning.writer import write_partitions
 from partitioning.splitter import split_train_test
 from partitioning.consensus_writer import write_consensus_dataset
 from core.port_utils import find_free_port
+from core.run_control import RunControl, RunStopped
 import json
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -25,8 +26,15 @@ class ExperimentLauncher:
         self,
         config: ExperimentConfig,
         process_tracker: dict | None = None,
+        control: RunControl | None = None,
     ) -> int:
         """
+        control: optional RunControl (core/run_control.py). When the user
+        presses "Stop" in the UI, the engines end their search as if their
+        timeout had expired and the best result so far is saved. Raises
+        RunStopped if the run was stopped before any result existed.
+
+
         process_tracker: an optional dict the caller keeps a reference to.
         As soon as this run's subprocesses (Flower/Bach server + clients)
         exist, their list is stored at process_tracker["processes"] — the
@@ -49,6 +57,7 @@ class ExperimentLauncher:
                     experiment_id=experiment_id,
                     repository=repository,
                     process_tracker=process_tracker,
+                    control=control,
                 )
 
             elif config.approach == "consensus":
@@ -56,6 +65,7 @@ class ExperimentLauncher:
                     config=config,
                     experiment_id=experiment_id,
                     repository=repository,
+                    control=control,
                 )
             elif config.approach == "coordination":
                 self._run_coordination(
@@ -63,6 +73,7 @@ class ExperimentLauncher:
                     experiment_id=experiment_id,
                     repository=repository,
                     process_tracker=process_tracker,
+                    control=control,
                 )
             elif config.approach == "mdl_federation":
                 self._run_mdl_federation(
@@ -70,6 +81,7 @@ class ExperimentLauncher:
                     experiment_id=experiment_id,
                     repository=repository,
                     process_tracker=process_tracker,
+                    control=control,
                 )
             elif config.approach == "centralized":
                 # Covers three single-learner, no-client, no-server
@@ -81,14 +93,22 @@ class ExperimentLauncher:
                     config=config,
                     experiment_id=experiment_id,
                     repository=repository,
+                    control=control,
                 )
             else:
                 raise NotImplementedError(
                     f"The approach '{config.approach}' is not implemented yet."
                 )
 
-            repository.complete_experiment(experiment_id)
-            
+            stopped_by_user = control is not None and control.stop_requested
+            repository.complete_experiment(
+                experiment_id,
+                note=(
+                    "Stopped by the user: best result found so far was kept."
+                    if stopped_by_user
+                    else None
+                ),
+            )
 
             print(
                 f"[Launcher] Experiment {experiment_id} "
@@ -97,6 +117,21 @@ class ExperimentLauncher:
             return experiment_id
 
         except Exception as error:
+            if control is not None and control.stop_requested:
+                # The user pressed "Stop" and the engine could not return a
+                # partial result (e.g. Andante, Consensus, or a forced kill):
+                # this is a stop, not a failure.
+                repository.stop_experiment(
+                    experiment_id,
+                    "Stopped by the user before a result was available "
+                    f"({error}).",
+                )
+                print(
+                    f"[Launcher] Experiment {experiment_id} "
+                    "saved as STOPPED."
+                )
+                raise RunStopped(experiment_id) from error
+
             repository.fail_experiment(
                 experiment_id=experiment_id,
                 error_message=str(error),
@@ -115,6 +150,7 @@ class ExperimentLauncher:
     experiment_id: int,
     repository: ExperimentRepository,
     process_tracker: dict | None = None,
+    control: RunControl | None = None,
 ) -> None:
         server_dataset = DATASETS_DIR / config.dataset
 
@@ -140,6 +176,9 @@ class ExperimentLauncher:
             parents=True,
             exist_ok=True,
         )
+
+        if control is not None:
+            control.register_directory(experiment_directory)
 
         print(
             f"[Launcher] Results directory: "
@@ -237,7 +276,7 @@ class ExperimentLauncher:
                 processes.append(client_process)
                 client_processes.append(client_process)
 
-            server_return_code = server_process.wait()
+            server_return_code = self._wait_for(server_process, control)
 
             if server_return_code != 0:
                 raise RuntimeError(
@@ -538,6 +577,7 @@ class ExperimentLauncher:
     config: ExperimentConfig,
     experiment_id: int,
     repository: ExperimentRepository,
+    control: RunControl | None = None,
 ) -> None:
         source_dataset_directory = (
             DATASETS_DIR / config.dataset
@@ -653,6 +693,9 @@ class ExperimentLauncher:
             exist_ok=True,
         )
 
+        if control is not None:
+            control.register_directory(consensus_output_directory)
+
         # 5. Start Consensus Flower server
         # --------------------------------------------------
 
@@ -739,7 +782,13 @@ class ExperimentLauncher:
             # 7. Wait for Flower
             # --------------------------------------------------
 
-            server_return_code = server_process.wait()
+            # The Consensus learners cannot return a partial result, so after a
+            # "Stop" the processes are ended after a short grace period.
+            server_return_code = self._wait_for(
+                server_process,
+                control,
+                grace_seconds=5.0,
+            )
 
             if server_return_code != 0:
                 raise RuntimeError(
@@ -864,7 +913,8 @@ class ExperimentLauncher:
     config: ExperimentConfig,
     experiment_id: int,
     repository: ExperimentRepository,
-    process_tracker: dict | None = None,) -> None:
+    process_tracker: dict | None = None,
+    control: RunControl | None = None,) -> None:
 
         server_dataset = (
             DATASETS_DIR
@@ -893,6 +943,9 @@ class ExperimentLauncher:
             parents=True,
             exist_ok=True,
         )
+
+        if control is not None:
+            control.register_directory(experiment_directory)
 
         print(
             "\n========== STARTING COORDINATION EXPERIMENT =========="
@@ -1086,8 +1139,9 @@ class ExperimentLauncher:
             # 4. Wait for server
             # --------------------------------------------------
 
-            server_return_code = (
-                server_process.wait()
+            server_return_code = self._wait_for(
+                server_process,
+                control,
             )
 
             if server_return_code != 0:
@@ -1322,6 +1376,7 @@ class ExperimentLauncher:
         experiment_id: int,
         repository: ExperimentRepository,
         process_tracker: dict | None = None,
+        control: RunControl | None = None,
     ) -> None:
         """
         FedMDL: federated MaxSynth / noisy-MDL. Same client/server process
@@ -1329,17 +1384,11 @@ class ExperimentLauncher:
         its own partition) — see engines/mdl_federation/strategy/fedmdl.py
         for how the search/combine protocol itself differs from FedPopper.
 
-        NOTE: unlike the other federated approaches, FedMDL clients don't
-        report a confusion matrix / accepted-solution verdict for the
-        FINAL combined program — each client only ever sees individual
-        candidate rules during the search, never the server's final
-        MaxSAT-combined result (see engines/mdl_federation/client.py).
-        So, for now, only the server's result is persisted here; per-client
-        rows (client_N_result.json exist on disk, written by each client's
-        save_client_result(), but intentionally not parsed into
-        ClientResult here, since that dataclass's tp/fn/fp/accepted_solution
-        fields don't have an FedMDL-client equivalent yet without
-        misrepresenting what each client actually observed).
+        NOTE: FedMDL clients never see the final combined program during
+        the run. For the dashboard, once the run is over the launcher
+        evaluates that program on each client's own partition (a separate
+        local process, nothing goes back to the server) to fill the
+        per-client confusion matrix and per-clause coverage.
         """
 
         server_dataset = DATASETS_DIR / config.dataset
@@ -1361,6 +1410,9 @@ class ExperimentLauncher:
             / f"experiment_{experiment_id}"
         )
         experiment_directory.mkdir(parents=True, exist_ok=True)
+
+        if control is not None:
+            control.register_directory(experiment_directory)
 
         server_command = [
             sys.executable,
@@ -1440,7 +1492,7 @@ class ExperimentLauncher:
                 processes.append(client_process)
                 client_processes.append(client_process)
 
-            server_return_code = server_process.wait()
+            server_return_code = self._wait_for(server_process, control)
 
             if server_return_code != 0:
                 raise RuntimeError(
@@ -1492,6 +1544,90 @@ class ExperimentLauncher:
                 all_clients_accepted=server_result.solution_found,
             )
 
+            # Per-client rows: each client's own activity (client_N_result.json)
+            # plus the final program evaluated on its local partition
+            # (simulation-side, see engines/mdl_federation/evaluate_final.py).
+            solution_rules = [
+                line.strip()
+                for line in (server_result.solution or "").splitlines()
+                if ":-" in line
+            ]
+            solution_file = experiment_directory / "final_program.pl"
+            solution_file.write_text("\n".join(solution_rules), encoding="utf-8")
+
+            for client_id, client_dataset in enumerate(client_datasets, start=1):
+                client_json = experiment_directory / f"client_{client_id}_result.json"
+                client_data = (
+                    json.loads(client_json.read_text(encoding="utf-8"))
+                    if client_json.is_file()
+                    else {}
+                )
+
+                evaluation: dict = {}
+                if solution_rules:
+                    evaluation_path = experiment_directory / f"client_{client_id}_final_eval.json"
+                    completed = subprocess.run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "engines.mdl_federation.evaluate_final",
+                            "--dataset",
+                            str(client_dataset),
+                            "--solution-file",
+                            str(solution_file),
+                            "--output",
+                            str(evaluation_path),
+                        ],
+                        cwd=PROJECT_ROOT,
+                    )
+                    if completed.returncode == 0 and evaluation_path.is_file():
+                        evaluation = json.loads(
+                            evaluation_path.read_text(encoding="utf-8")
+                        )
+                    else:
+                        print(
+                            f"[Launcher] Warning: could not evaluate the final "
+                            f"program on client {client_id}'s partition."
+                        )
+
+                num_pos = int(
+                    evaluation.get("num_pos", client_data.get("number_of_positive_examples", 0))
+                )
+                num_neg = int(
+                    evaluation.get("num_neg", client_data.get("number_of_negative_examples", 0))
+                )
+                tp = int(evaluation.get("tp", 0))
+                tn = int(evaluation.get("tn", 0))
+
+                repository.save_client_result(
+                    experiment_id=experiment_id,
+                    result=ClientResult(
+                        client_id=client_id,
+                        dataset_partition=str(client_dataset),
+                        number_of_examples=num_pos + num_neg,
+                        number_of_positive_examples=num_pos,
+                        number_of_negative_examples=num_neg,
+                        number_of_evaluations=int(client_data.get("number_of_evaluations", 0)),
+                        total_eval_wall=float(client_data.get("total_eval_wall", 0.0)),
+                        total_eval_cpu=0.0,
+                        average_eval_wall=float(client_data.get("average_eval_wall", 0.0)),
+                        average_eval_cpu=0.0,
+                        final_epsilon_positive="n/a",
+                        final_epsilon_negative="n/a",
+                        accepted_solution=bool(evaluation),
+                        final_score=float(tp + tn),
+                        tp=tp,
+                        fn=int(evaluation.get("fn", 0)),
+                        tn=tn,
+                        fp=int(evaluation.get("fp", 0)),
+                        clause_coverage=(
+                            json.dumps(evaluation["clauses"])
+                            if evaluation.get("clauses")
+                            else None
+                        ),
+                    ),
+                )
+
             hypothesis_log_path = experiment_directory / "hypothesis_log.json"
 
             if hypothesis_log_path.is_file():
@@ -1517,6 +1653,7 @@ class ExperimentLauncher:
         config: ExperimentConfig,
         experiment_id: int,
         repository: ExperimentRepository,
+        control: RunControl | None = None,
     ) -> None:
         """
         A non-federated baseline: run a single ILP learner once on the
@@ -1582,6 +1719,9 @@ class ExperimentLauncher:
 
         experiment_directory.mkdir(parents=True, exist_ok=True)
 
+        if control is not None:
+            control.register_directory(experiment_directory)
+
         print("\n========== STARTING CENTRALIZED RUN ==========")
         print(f"Approach : centralized ({learner_label})")
         print(f"Dataset  : {config.dataset}")
@@ -1600,16 +1740,30 @@ class ExperimentLauncher:
             str(experiment_directory),
         ]
 
-        process = subprocess.run(
+        process = subprocess.Popen(
             runner_command,
             cwd=PROJECT_ROOT,
-            timeout=config.timeout + 30,
         )
 
-        if process.returncode != 0:
+        try:
+            return_code = self._wait_for(
+                process,
+                control,
+                hard_timeout=config.timeout + 30,
+                # Popper and MaxSynth return their best program at once
+                # (they handle the stop like a timeout); Andante cannot
+                # return a partial result, so it is ended quickly.
+                grace_seconds=3.0 if learner == "andante" else 30.0,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(
+                f"The centralized {learner_label} run exceeded its timeout."
+            ) from error
+
+        if return_code != 0:
             raise RuntimeError(
                 f"The centralized {learner_label} run exited with code "
-                f"{process.returncode}."
+                f"{return_code}."
             )
 
         result_path = experiment_directory / "server_result.json"
@@ -1778,6 +1932,59 @@ class ExperimentLauncher:
 
         return client_directories
 
+
+    def _wait_for(
+        self,
+        process: subprocess.Popen,
+        control: RunControl | None = None,
+        grace_seconds: float = 90.0,
+        hard_timeout: float | None = None,
+    ) -> int:
+        """
+        process.wait() that also reacts to the "Stop" button.
+
+        When the user stops the run, the engines notice the STOP file and
+        finish by themselves (best result so far saved, normal exit code).
+        If the process is still alive grace_seconds after the request —
+        Andante and the Consensus learners cannot return a partial result,
+        or a final combine takes very long — it is terminated.
+        hard_timeout (seconds) kills the process and raises
+        subprocess.TimeoutExpired.
+        """
+        started = time.monotonic()
+        stop_seen_at: float | None = None
+
+        while True:
+            try:
+                return process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                pass
+
+            now = time.monotonic()
+
+            if hard_timeout is not None and now - started > hard_timeout:
+                process.kill()
+                process.wait()
+                raise subprocess.TimeoutExpired(process.args, hard_timeout)
+
+            if control is not None and control.stop_requested:
+                if stop_seen_at is None:
+                    stop_seen_at = now
+                    print(
+                        "[Launcher] Stop requested: waiting for the engine "
+                        "to return its best result so far..."
+                    )
+                elif now - stop_seen_at > grace_seconds:
+                    print(
+                        "[Launcher] The engine did not stop by itself: "
+                        "terminating it."
+                    )
+                    process.terminate()
+                    try:
+                        return process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        return process.wait()
 
     @staticmethod
     def _wait_for_server_ready(

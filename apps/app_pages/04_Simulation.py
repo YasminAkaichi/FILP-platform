@@ -15,9 +15,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.benchmark import BenchmarkConfig
+from core.background_run import BackgroundRun
 from core.benchmark_launcher import BenchmarkLauncher
 from core.port_utils import find_free_port
 from database.repository import ExperimentRepository
+from apps.run_monitor import render_run_monitor
 
 # How many experiments this server will run at the same time, across
 # every user. Each run spins up N+1 real OS subprocesses (a Flower
@@ -806,79 +808,121 @@ elif current_step == 4:
     st.markdown("### Running your experiment")
     st.write("")
 
-    if not st.session_state.get("_wizard_launched"):
-        running_count = ExperimentRepository().count_running_benchmarks()
+    launched = st.session_state.get("_wizard_launched")
+    failure = st.session_state.get("_wizard_failure")  # (kind, message) or None
+    bg = st.session_state.get("_wizard_bg")
 
-        if running_count >= MAX_CONCURRENT_EXPERIMENTS:
-            st.warning(
-                f"⏳ {running_count} experiment(s) are already running on this "
-                f"server right now (limit: {MAX_CONCURRENT_EXPERIMENTS} at a "
-                "time, so everyone testing the platform gets fair, stable "
-                "performance). Please wait a moment and try again."
-            )
-            if st.button("Check again"):
-                st.rerun()
-            st.stop()
-
-        # A fresh, unused port per launch — not a shared hardcoded one —
-        # so two experiments running at the same time (from the same
-        # user or different ones) don't fight over the same Flower
-        # server address. See core/port_utils.py.
-        server_port = find_free_port()
-
-        config = BenchmarkConfig(
-            name=st.session_state["wizard_name"].strip(),
-            approach=method,
-            dataset=st.session_state["wizard_dataset"],
-            number_of_clients=int(st.session_state["wizard_clients"]),
-            partition_strategy=st.session_state["wizard_partition"],
-            number_of_runs=int(st.session_state["wizard_runs"]),
-            base_seed=int(st.session_state["wizard_seed"]),
-            learner=st.session_state["wizard_learner"],
-            rounds=int(st.session_state["wizard_rounds"]),
-            timeout=int(st.session_state["wizard_timeout"]),
-            server_address=f"localhost:{server_port}",
-        )
-
-        try:
-            with st.status("Running experiment…", expanded=True) as status:
-                chips = [
-                    ("Dataset", st.session_state["wizard_dataset"]),
-                    ("Clients", str(st.session_state["wizard_clients"])),
-                    ("Partition", st.session_state["wizard_partition"]),
-                    ("Runs", str(st.session_state["wizard_runs"])),
-                ]
-                if is_consensus:
-                    chips.append(("Learner", st.session_state["wizard_learner"].title()))
-                elif method in ("collaboration", "coordination"):
-                    chips.append(("Timeout", f"{st.session_state['wizard_timeout']} s"))
-                else:
-                    chips.append(("Max rounds", str(st.session_state["wizard_rounds"])))
-                render_chips(chips)
-
-                launcher = BenchmarkLauncher()
-                benchmark_id = launcher.run(config)
-
-                st.session_state["_wizard_launched"] = True
-                st.session_state["_wizard_benchmark_id"] = benchmark_id
-
-                status.update(
-                    label=f"Experiment #{benchmark_id} completed",
-                    state="complete",
-                    expanded=False,
-                )
-
+    if failure:
+        kind, message = failure
+        if kind == "stopped":
+            st.warning(message)
+        else:
+            st.error(message)
+        if st.button("← Back to parameters"):
+            st.session_state.pop("_wizard_failure", None)
+            st.session_state["wizard_step"] = 2
             st.rerun()
 
-        except Exception as error:
-            st.error(f"Experiment failed: {error}")
-            if st.button("← Back to parameters"):
-                st.session_state["wizard_step"] = 2
-                st.rerun()
+    elif not launched:
+        if bg is None:
+            running_count = ExperimentRepository().count_running_benchmarks()
+
+            if running_count >= MAX_CONCURRENT_EXPERIMENTS:
+                st.warning(
+                    f"⏳ {running_count} experiment(s) are already running on this "
+                    f"server right now (limit: {MAX_CONCURRENT_EXPERIMENTS} at a "
+                    "time, so everyone testing the platform gets fair, stable "
+                    "performance). Please wait a moment and try again."
+                )
+                if st.button("Check again"):
+                    st.rerun()
+                st.stop()
+
+            # A fresh, unused port per launch — not a shared hardcoded one —
+            # so two experiments running at the same time (from the same
+            # user or different ones) don't fight over the same Flower
+            # server address. See core/port_utils.py.
+            server_port = find_free_port()
+
+            config = BenchmarkConfig(
+                name=st.session_state["wizard_name"].strip(),
+                approach=method,
+                dataset=st.session_state["wizard_dataset"],
+                number_of_clients=int(st.session_state["wizard_clients"]),
+                partition_strategy=st.session_state["wizard_partition"],
+                number_of_runs=int(st.session_state["wizard_runs"]),
+                base_seed=int(st.session_state["wizard_seed"]),
+                learner=st.session_state["wizard_learner"],
+                rounds=int(st.session_state["wizard_rounds"]),
+                timeout=int(st.session_state["wizard_timeout"]),
+                server_address=f"localhost:{server_port}",
+            )
+
+            # The experiment runs in a background thread so the page stays
+            # responsive and can offer a "Stop" button (core/background_run.py).
+            bg = BackgroundRun(
+                lambda control, _config=config: BenchmarkLauncher().run(
+                    _config, control=control
+                )
+            )
+            st.session_state["_wizard_bg"] = bg
+            st.rerun()
+
+        if not bg.done:
+            chips = [
+                ("Dataset", st.session_state["wizard_dataset"]),
+                ("Clients", str(st.session_state["wizard_clients"])),
+                ("Partition", st.session_state["wizard_partition"]),
+                ("Runs", str(st.session_state["wizard_runs"])),
+            ]
+            if is_consensus:
+                chips.append(("Learner", st.session_state["wizard_learner"].title()))
+            elif method in ("collaboration", "coordination"):
+                chips.append(("Timeout", f"{st.session_state['wizard_timeout']} s"))
+            else:
+                chips.append(("Max rounds", str(st.session_state["wizard_rounds"])))
+            render_chips(chips)
+
+            render_run_monitor(
+                bg,
+                key="wizard",
+                title="Running experiment…",
+                details=(
+                    "Press Stop to end the search now; the best hypothesis "
+                    "found so far is saved."
+                ),
+            )
+            st.stop()
+
+        # The run is over: read its outcome once, then forget the thread.
+        st.session_state.pop("_wizard_bg", None)
+
+        if bg.error is not None:
+            st.session_state["_wizard_failure"] = (
+                "error",
+                f"Experiment failed: {bg.error}",
+            )
+        elif bg.stopped_without_result:
+            st.session_state["_wizard_failure"] = (
+                "stopped",
+                "Experiment stopped before any result was available "
+                "(this approach cannot return a partial result).",
+            )
+        else:
+            st.session_state["_wizard_launched"] = True
+            st.session_state["_wizard_benchmark_id"] = bg.result
+            st.session_state["_wizard_stopped"] = bg.stop_requested
+        st.rerun()
 
     else:
         benchmark_id = st.session_state["_wizard_benchmark_id"]
-        st.success(f"Experiment #{benchmark_id} completed successfully.")
+        if st.session_state.get("_wizard_stopped"):
+            st.success(
+                f"Experiment #{benchmark_id} was stopped. The best result "
+                "found so far has been saved."
+            )
+        else:
+            st.success(f"Experiment #{benchmark_id} completed successfully.")
         st.write("")
 
         view_col, new_col = st.columns(2)
@@ -890,13 +934,14 @@ elif current_step == 4:
                     "wizard_step",
                     "_wizard_launched",
                     "_wizard_benchmark_id",
+                    "_wizard_stopped",
                     "wizard_name",
                 ]:
                     st.session_state.pop(key, None)
                 st.switch_page("app_pages/05_Experiments.py")
         with new_col:
             if st.button("Launch another experiment", use_container_width=True):
-                for key in ["_wizard_launched", "_wizard_benchmark_id", "wizard_name"]:
+                for key in ["_wizard_launched", "_wizard_benchmark_id", "_wizard_stopped", "wizard_name"]:
                     st.session_state.pop(key, None)
                 st.session_state["wizard_step"] = 1
                 st.rerun()

@@ -1142,15 +1142,23 @@ def run_server(
                 # TIMEOUT
                 # ------------------------------------------
 
+                # A STOP requested from the UI ("Stop" button, see
+                # core/run_control.py) is handled exactly like a timeout:
+                # stop searching, validate the best hypothesis so far.
+                stop_requested = bool(args.output_dir) and os.path.exists(
+                    os.path.join(args.output_dir, "STOP")
+                )
+
                 if (
                     time.perf_counter()
                     - wall_start
                     > TIMEOUT
-                ):
+                ) or stop_requested:
 
                     print(
-                        f"\nTIMEOUT reached "
-                        f"({TIMEOUT}s)"
+                        "\nSTOP requested by the user"
+                        if stop_requested
+                        else f"\nTIMEOUT reached ({TIMEOUT}s)"
                     )
 
                     (

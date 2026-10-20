@@ -63,6 +63,10 @@ class ClientResult:
     total_evaluate_phase_wall: float = 0.0
     total_evaluate_phase_cpu: float = 0.0
 
+    # JSON list of {"clause", "positive_covered", "negative_covered"} on
+    # this client's local data (FedMDL). None for other approaches.
+    clause_coverage: str | None = None
+
 @dataclass
 class ConsensusResult:
     learner: str

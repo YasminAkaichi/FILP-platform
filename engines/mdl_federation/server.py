@@ -160,6 +160,8 @@ def main() -> None:
         with_suspension=(args.timing_mode == "wall"),
         timeout_seconds=args.timeout,
         combine_mode=args.combine_mode,
+        # "Stop" button: the UI writes <output-dir>/STOP (core/run_control.py)
+        stop_file=os.path.join(args.output_dir, "STOP"),
     )
 
     log(DEBUG, "Starting Flower server with FedMDL strategy.")

@@ -86,6 +86,8 @@ STATUS_STYLE = {
     "queued": (PALETTE["neutral"], PALETTE["neutral_soft"], "○"),
     "failed": (PALETTE["error"], PALETTE["error_soft"], "✕"),
     "error": (PALETTE["error"], PALETTE["error_soft"], "✕"),
+    # Stopped by the user with no result to keep (see core/run_control.py)
+    "stopped": (PALETTE["neutral"], PALETTE["neutral_soft"], "⏹"),
 }
 
 METHOD_STYLE = {
@@ -746,7 +748,8 @@ def load_client_results(benchmark_id: int) -> list[dict]:
                 cr.tp,
                 cr.fn,
                 cr.tn,
-                cr.fp
+                cr.fp,
+                cr.clause_coverage
             FROM benchmark_runs AS br
             JOIN client_results AS cr
                 ON cr.experiment_id = br.experiment_id
@@ -880,7 +883,7 @@ if (
     with filter_status:
         status_filter = st.selectbox(
             "Status",
-            options=["All statuses", "Completed", "Running", "Failed"],
+            options=["All statuses", "Completed", "Running", "Failed", "Stopped"],
             label_visibility="collapsed",
         )
 
@@ -1914,6 +1917,46 @@ with tab_clients:
                 st.altair_chart(
                     altair_bar(performance_long, "Client", "Count", "Type"),
                     use_container_width=True,
+                )
+
+        # Per-clause coverage of the final program on each client's local
+        # data (FedMDL).
+        coverage_rows = []
+        for row in selected_client_results:
+            raw = row.get("clause_coverage")
+            if not raw:
+                continue
+            try:
+                clauses = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            for index, clause in enumerate(clauses, start=1):
+                coverage_rows.append(
+                    {
+                        "Client": row["client_id"],
+                        "Clause #": index,
+                        "Clause": clause.get("clause", ""),
+                        "Positives covered": clause.get("positive_covered", 0),
+                        "of positives": row["number_of_positive_examples"],
+                        "Negatives covered": clause.get("negative_covered", 0),
+                        "of negatives": row["number_of_negative_examples"],
+                    }
+                )
+
+        if coverage_rows:
+            with st.container(border=True):
+                st.markdown(
+                    '<div class="section-title">Clause coverage per client</div>',
+                    unsafe_allow_html=True,
+                )
+                st.caption(
+                    "How many of each client's local examples every clause of "
+                    "the final program covers."
+                )
+                st.dataframe(
+                    pd.DataFrame(coverage_rows),
+                    use_container_width=True,
+                    hide_index=True,
                 )
 
 # --- Dataset explorer tab ---------------------------------------------------

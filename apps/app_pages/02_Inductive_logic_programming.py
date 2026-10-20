@@ -19,6 +19,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.connection import get_connection
+from core.background_run import BackgroundRun
+from apps.run_monitor import render_run_monitor
 
 DATASETS_DIRECTORY = PROJECT_ROOT / "datasets"
 
@@ -1714,118 +1716,153 @@ with try_learn_tab:
     # instead of disappearing the moment `run_clicked` goes stale.
     # -------------------------------------------------------------
 
+    tl_bg = st.session_state.get("_tl_bg")
+
     if run_clicked:
         st.session_state["try_learn_running"] = True
-        with result_col:
-            st.markdown("**3. Result**")
 
-            # -------------------------------------------------------
-            # REAL run — a centralized (non-federated) job, executed via
-            # ExperimentLauncher. Popper uses popper-core 1.1.0; Andante
-            # uses the same local learner Learning by Consensus already
-            # relies on (engines.consensus.learners.andante). Both are
-            # dispatched by core/launcher.py::_run_centralized based on
-            # config.learner.
-            # -------------------------------------------------------
-            from core.launcher import ExperimentLauncher
-            from core.experiment import ExperimentConfig
+        # -----------------------------------------------------------
+        # REAL run — a centralized (non-federated) job, executed via
+        # ExperimentLauncher. Popper uses popper-core 1.1.0; Andante
+        # uses the same local learner Learning by Consensus already
+        # relies on (engines.consensus.learners.andante). Both are
+        # dispatched by core/launcher.py::_run_centralized based on
+        # config.learner.
+        #
+        # It runs in a background thread (core/background_run.py) so the
+        # page can show a "Stop" button; the result is collected below on
+        # the rerun that follows the end of the run.
+        # -----------------------------------------------------------
+        from core.launcher import ExperimentLauncher
+        from core.experiment import ExperimentConfig
 
-            if tl_system == "Andante":
-                tl_learner = "andante"
-            elif tl_system == "MaxSynth (MDL)":
-                tl_learner = "mdl"
-            else:
-                tl_learner = "popper"
-            run_error: str | None = None
-            experiment_id: int | None = None
+        if tl_system == "Andante":
+            tl_learner = "andante"
+        elif tl_system == "MaxSynth (MDL)":
+            tl_learner = "mdl"
+        else:
+            tl_learner = "popper"
 
-            with st.status(f"Running {tl_system} on `{format_dataset_name(tl_dataset)}`…", expanded=True) as status:
-                st.write(f"Loading `{tl_dataset}` — {tl_positive_count} positive, {tl_negative_count} negative examples")
-                if tl_learner == "andante":
-                    st.write("Launching a centralized Andante run on this native example (no federation, single process)…")
-                elif tl_learner == "mdl":
-                    st.write("Launching a centralized MaxSynth (noisy-MDL) run — generate, test, combine via MaxSAT, constrain (no federation, single process)…")
-                else:
-                    st.write("Launching a centralized Popper 1.1.0 run (no federation, single process)…")
+        tl_config = ExperimentConfig(
+            approach="centralized",
+            dataset=tl_dataset,
+            number_of_clients=1,
+            partition_strategy="iid",
+            learner=tl_learner,
+            # Same default timeout (600s) as every other
+            # approach on this platform.
+        )
+        st.session_state["_tl_ctx"] = {
+            "system": tl_system,
+            "dataset": tl_dataset,
+            "learner": tl_learner,
+        }
+        st.session_state["_tl_bg"] = BackgroundRun(
+            lambda control, _config=tl_config: ExperimentLauncher().run(
+                _config, control=control
+            )
+        )
+        st.rerun()
+
+    if tl_bg is not None and tl_bg.done:
+        _tl_ctx = st.session_state.pop("_tl_ctx", {})
+        st.session_state.pop("_tl_bg", None)
+
+        tl_system = _tl_ctx.get("system", tl_system)
+        tl_dataset = _tl_ctx.get("dataset", tl_dataset)
+        tl_learner = _tl_ctx.get("learner", "popper")
+
+        run_error: str | None = None
+        experiment_id: int | None = None
+        if tl_bg.error is not None:
+            run_error = str(tl_bg.error)
+        elif tl_bg.stopped_without_result:
+            run_error = (
+                "Stopped before any result was available (this learner "
+                "cannot return a partial result)."
+            )
+        else:
+            experiment_id = tl_bg.result
+
+        if run_error:
+            st.session_state["try_learn_result"] = {
+                "system": tl_system,
+                "dataset": tl_dataset,
+                "error": run_error,
+            }
+        else:
+            with get_connection() as _tl_conn:
+                _tl_row = _tl_conn.execute(
+                    """
+                    SELECT solution, solution_found, total_time_seconds, number_of_programs,
+                           tp, fn, tn, fp
+                    FROM server_results
+                    WHERE experiment_id = ?
+                    """,
+                    (experiment_id,),
+                ).fetchone()
+            server_result = dict(_tl_row) if _tl_row else {}
+            hypothesis = server_result.get("solution")
+
+            # tp/fn/tn/fp/duration breakdown aren't stored in the
+            # DB (only what every approach shares is) — the full
+            # run JSON on disk has the rest, written by
+            # engines.centralized.runner / andante_runner.
+            run_json_path = (
+                PROJECT_ROOT
+                / "artifacts"
+                / f"experiment_{experiment_id}"
+                / "server_result.json"
+            )
+            run_metrics: dict = {}
+            if run_json_path.is_file():
                 try:
-                    tl_config = ExperimentConfig(
-                        approach="centralized",
-                        dataset=tl_dataset,
-                        number_of_clients=1,
-                        partition_strategy="iid",
-                        learner=tl_learner,
-                        # Same default timeout (600s) as every other
-                        # approach on this platform.
-                    )
-                    experiment_id = ExperimentLauncher().run(tl_config)
-                    status.update(label="Run complete", state="complete", expanded=False)
-                except Exception as exc:  # noqa: BLE001 — surface any solver error to the user
-                    run_error = str(exc)
-                    status.update(label="Run failed", state="error", expanded=True)
+                    run_metrics = json.loads(run_json_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    run_metrics = {}
 
-            if run_error:
-                st.session_state["try_learn_result"] = {
-                    "system": tl_system,
-                    "dataset": tl_dataset,
-                    "error": run_error,
-                }
-            else:
-                with get_connection() as _tl_conn:
-                    _tl_row = _tl_conn.execute(
-                        """
-                        SELECT solution, solution_found, total_time_seconds, number_of_programs,
-                               tp, fn, tn, fp
-                        FROM server_results
-                        WHERE experiment_id = ?
-                        """,
-                        (experiment_id,),
-                    ).fetchone()
-                server_result = dict(_tl_row) if _tl_row else {}
-                hypothesis = server_result.get("solution")
-
-                # tp/fn/tn/fp/duration breakdown aren't stored in the
-                # DB (only what every approach shares is) — the full
-                # run JSON on disk has the rest, written by
-                # engines.centralized.runner / andante_runner.
-                run_json_path = (
-                    PROJECT_ROOT
-                    / "artifacts"
-                    / f"experiment_{experiment_id}"
-                    / "server_result.json"
-                )
-                run_metrics: dict = {}
-                if run_json_path.is_file():
-                    try:
-                        run_metrics = json.loads(run_json_path.read_text(encoding="utf-8"))
-                    except (OSError, json.JSONDecodeError):
-                        run_metrics = {}
-
-                st.session_state["try_learn_result"] = {
-                    "system": tl_system,
-                    "dataset": tl_dataset,
-                    "learner": tl_learner,
-                    "hypotheses": [hypothesis] if hypothesis else [],
-                    "solution_found": bool(server_result.get("solution_found")),
-                    "elapsed": float(server_result.get("total_time_seconds") or 0.0),
-                    "number_of_programs": server_result.get("number_of_programs"),
-                    "tp": server_result.get("tp"),
-                    "fn": server_result.get("fn"),
-                    "tn": server_result.get("tn"),
-                    "fp": server_result.get("fp"),
-                    "accuracy": run_metrics.get("accuracy"),
-                    "precision": run_metrics.get("precision"),
-                    "recall": run_metrics.get("recall"),
-                    "f1": run_metrics.get("f1"),
-                    "duration_summary": run_metrics.get("duration_summary") or [],
-                    "experiment_id": experiment_id,
-                    "real": True,
-                }
+            st.session_state["try_learn_result"] = {
+                "system": tl_system,
+                "dataset": tl_dataset,
+                "learner": tl_learner,
+                "hypotheses": [hypothesis] if hypothesis else [],
+                "solution_found": bool(server_result.get("solution_found")),
+                "elapsed": float(server_result.get("total_time_seconds") or 0.0),
+                "number_of_programs": server_result.get("number_of_programs"),
+                "tp": server_result.get("tp"),
+                "fn": server_result.get("fn"),
+                "tn": server_result.get("tn"),
+                "fp": server_result.get("fp"),
+                "accuracy": run_metrics.get("accuracy"),
+                "precision": run_metrics.get("precision"),
+                "recall": run_metrics.get("recall"),
+                "f1": run_metrics.get("f1"),
+                "duration_summary": run_metrics.get("duration_summary") or [],
+                "experiment_id": experiment_id,
+                "stopped": tl_bg.stop_requested,
+                "real": True,
+            }
 
         st.session_state["try_learn_running"] = False
         st.rerun()
 
     with result_col:
-        if not run_clicked:
+        if tl_bg is not None and not tl_bg.done:
+            st.markdown("**3. Result**")
+            _tl_ctx_live = st.session_state.get("_tl_ctx", {})
+            render_run_monitor(
+                tl_bg,
+                key="try_learn",
+                title=(
+                    f"Running {_tl_ctx_live.get('system', tl_system)} on "
+                    f"`{format_dataset_name(_tl_ctx_live.get('dataset', tl_dataset))}`…"
+                ),
+                details=(
+                    "A centralized run (no federation). Press Stop to end the "
+                    "search now and keep the best program found so far."
+                ),
+            )
+        elif not run_clicked:
             st.markdown("**3. Result**")
             stored_result = st.session_state.get("try_learn_result")
 
@@ -1887,6 +1924,9 @@ with try_learn_tab:
 
                     if is_stale:
                         st.warning("This result is for a different configuration than the one selected above — run again to refresh it.")
+
+                    if stored_result.get("stopped"):
+                        st.info("⏹ You stopped this run: this is the best result found before stopping.")
 
                     if stored_result["hypotheses"]:
                         for hypothesis in stored_result["hypotheses"]:
@@ -2262,6 +2302,7 @@ with custom_ilp_tab:
                         type="primary",
                         use_container_width=True,
                         key="custom_ilp_run",
+                        disabled=st.session_state.get("_custom_bg") is not None,
                     )
 
                 if custom_run_clicked:
@@ -2292,33 +2333,84 @@ with custom_ilp_tab:
                         custom_learner = "mdl"
                     else:
                         custom_learner = "popper"
+
+                    custom_config = ExperimentConfig(
+                        approach="centralized",
+                        dataset=custom_dataset_name,
+                        number_of_clients=1,
+                        partition_strategy="iid",
+                        learner=custom_learner,
+                    )
+
+                    # Chat context (below) references the current known
+                    # predicates and their meaning. Computed now, while the
+                    # plan is at hand, and kept with the run so it can be
+                    # stored when the run ends (possibly on a later rerun).
+                    _custom_glossary = {
+                        cp.predicate: (
+                            f"true iff {cp.original_name!r} >= {cp.threshold:.4g}"
+                            if cp.threshold is not None
+                            else (
+                                f"true iff {cp.original_name!r} is a 'yes'-like value"
+                                if cp.kind == "boolean"
+                                else f"{cp.original_name!r}'s raw value"
+                            )
+                        )
+                        for cp in plan.feature_plans
+                    }
+
+                    # Background thread (core/background_run.py) so the page
+                    # can show a "Stop" button while the learner runs.
+                    st.session_state["_custom_ctx"] = {
+                        "system": custom_system,
+                        "dataset": custom_dataset_name,
+                        "glossary": _custom_glossary,
+                        "positives": len(plan.positive_ids),
+                        "negatives": len(plan.negative_ids),
+                    }
+                    st.session_state["_custom_bg"] = BackgroundRun(
+                        lambda control, _config=custom_config: ExperimentLauncher().run(
+                            _config, control=control
+                        )
+                    )
+                    st.rerun()
+
+                _custom_bg = st.session_state.get("_custom_bg")
+
+                if _custom_bg is not None and not _custom_bg.done:
+                    _custom_ctx_live = st.session_state.get("_custom_ctx", {})
+                    render_run_monitor(
+                        _custom_bg,
+                        key="custom_ilp",
+                        title=f"Running {_custom_ctx_live.get('system', custom_system)} on your data…",
+                        details=(
+                            f"{_custom_ctx_live.get('positives', '?')} positive, "
+                            f"{_custom_ctx_live.get('negatives', '?')} negative examples — "
+                            "a centralized run (no federation). Press Stop to keep "
+                            "the best program found so far."
+                        ),
+                    )
+
+                elif _custom_bg is not None and _custom_bg.done:
+                    _custom_ctx = st.session_state.pop("_custom_ctx", {})
+                    st.session_state.pop("_custom_bg", None)
+
                     custom_run_error: str | None = None
                     custom_experiment_id: int | None = None
-
-                    with st.status(f"Running {custom_system} on your data…", expanded=True) as custom_status:
-                        st.write(
-                            f"Loading `{custom_dataset_name}` — {len(plan.positive_ids)} positive, "
-                            f"{len(plan.negative_ids)} negative examples"
+                    if _custom_bg.error is not None:
+                        custom_run_error = str(_custom_bg.error)
+                    elif _custom_bg.stopped_without_result:
+                        custom_run_error = (
+                            "Stopped before any result was available (this "
+                            "learner cannot return a partial result)."
                         )
-                        st.write("Launching a centralized run (no federation, single process)…")
-                        try:
-                            custom_config = ExperimentConfig(
-                                approach="centralized",
-                                dataset=custom_dataset_name,
-                                number_of_clients=1,
-                                partition_strategy="iid",
-                                learner=custom_learner,
-                            )
-                            custom_experiment_id = ExperimentLauncher().run(custom_config)
-                            custom_status.update(label="Run complete", state="complete", expanded=False)
-                        except Exception as exc:  # noqa: BLE001 — surface any solver error to the user
-                            custom_run_error = str(exc)
-                            custom_status.update(label="Run failed", state="error", expanded=True)
+                    else:
+                        custom_experiment_id = _custom_bg.result
 
                     if custom_run_error:
                         st.session_state["custom_ilp_result"] = {
-                            "system": custom_system,
-                            "dataset": custom_dataset_name,
+                            "system": _custom_ctx.get("system"),
+                            "dataset": _custom_ctx.get("dataset"),
                             "error": custom_run_error,
                         }
                     else:
@@ -2333,28 +2425,16 @@ with custom_ilp_tab:
                                 (custom_experiment_id,),
                             ).fetchone()
                         st.session_state["custom_ilp_result"] = {
-                            "system": custom_system,
-                            "dataset": custom_dataset_name,
+                            "system": _custom_ctx.get("system"),
+                            "dataset": _custom_ctx.get("dataset"),
                             "error": None,
+                            "stopped": _custom_bg.stop_requested,
                             **(dict(_custom_row) if _custom_row else {}),
                         }
-                        # Chat context (below) references the current known
-                        # predicates and their meaning, kept alongside the
-                        # result so it survives into later reruns (e.g. when
-                        # the user sends a chat message, which reruns the
-                        # whole script but custom_run_clicked is False again).
-                        st.session_state["custom_ilp_predicate_glossary"] = {
-                            cp.predicate: (
-                                f"true iff {cp.original_name!r} >= {cp.threshold:.4g}"
-                                if cp.threshold is not None
-                                else (
-                                    f"true iff {cp.original_name!r} is a 'yes'-like value"
-                                    if cp.kind == "boolean"
-                                    else f"{cp.original_name!r}'s raw value"
-                                )
-                            )
-                            for cp in plan.feature_plans
-                        }
+                        # Kept alongside the result so it survives into later
+                        # reruns (e.g. when the user sends a chat message).
+                        st.session_state["custom_ilp_predicate_glossary"] = _custom_ctx.get("glossary", {})
+                    st.rerun()
 
                 # -------------------------------------------------------
                 # Persisted result display — reads from session_state (not
@@ -2366,7 +2446,10 @@ with custom_ilp_tab:
                     if _stored_custom_result.get("error"):
                         st.error(f"Run failed: {_stored_custom_result['error']}")
                     else:
-                        st.success("Run complete")
+                        if _stored_custom_result.get("stopped"):
+                            st.info("⏹ You stopped this run: showing the best result found before stopping.")
+                        else:
+                            st.success("Run complete")
                         result_metric_cols = st.columns(4)
                         tp, fn, tn, fp = (
                             _stored_custom_result.get("tp"),
