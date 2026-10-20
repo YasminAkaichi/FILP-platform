@@ -455,10 +455,10 @@ class FlowerClient(fl.client.NumPyClient):
         metrics = {
             "client_id": self.client_id,
             "round": round_id,
-            "tp": int(tp),
-            "fn": int(fn),
-            "tn": int(tn),
-            "fp": int(fp),
+            # The confusion matrix (tp/fn/tn/fp) is deliberately NOT sent:
+            # the server only needs the outcome pair and the score (in the
+            # payload) and the per-clause booleans below. The matrix stays
+            # local (console and client_<id>_result.json).
             "score": int(score),
             "evaluation_wall_seconds": float(eval_wall),
             "evaluation_cpu_seconds": float(eval_cpu),
@@ -520,12 +520,9 @@ class FlowerClient(fl.client.NumPyClient):
 
         loss = float(1.0 - accuracy)
 
+        # Confusion-matrix counts are not sent to the server (see fit()).
         metrics = {
             "client_id": self.client_id,
-            "tp": int(tp),
-            "fn": int(fn),
-            "tn": int(tn),
-            "fp": int(fp),
             "accuracy": float(accuracy),
         }
 

@@ -1654,15 +1654,17 @@ with try_learn_tab:
         st.markdown("**1. Choose an ILP system**")
         tl_system = st.radio(
             "ILP system",
-            options=["Popper", "Andante"],
+            options=["Popper", "Andante", "MaxSynth (MDL)"],
             horizontal=True,
             label_visibility="collapsed",
             key="try_learn_system",
         )
         if tl_system == "Popper":
             st.caption("Constraint-driven search over ASP, guided by `bias.pl`. Runs live here as a single, non-federated (**centralized**) Popper 1.1.0 job — the same engine behind every approach on this platform, without the federation layer.")
-        else:
+        elif tl_system == "Andante":
             st.caption("Progol-style inverse-entailment search guided by mode declarations. Runs live here via Andante — the same local learner already used by Learning by Consensus.")
+        else:
+            st.caption("Noise-tolerant variant of Popper's search: adds a MaxSAT-based *combine* stage (Popper-v3) that merges small programs into one minimizing an MDL cost — size(h) + false negatives + false positives — instead of requiring a perfect fit. From \"Learning MDL Logic Programs From Noisy Data\" (Hocquette, Niskanen, Järvisalo & Cropper, 2023).")
 
         st.write("")
         st.markdown("**2. Choose a dataset**")
@@ -1728,7 +1730,12 @@ with try_learn_tab:
             from core.launcher import ExperimentLauncher
             from core.experiment import ExperimentConfig
 
-            tl_learner = "andante" if tl_system == "Andante" else "popper"
+            if tl_system == "Andante":
+                tl_learner = "andante"
+            elif tl_system == "MaxSynth (MDL)":
+                tl_learner = "mdl"
+            else:
+                tl_learner = "popper"
             run_error: str | None = None
             experiment_id: int | None = None
 
@@ -1736,6 +1743,8 @@ with try_learn_tab:
                 st.write(f"Loading `{tl_dataset}` — {tl_positive_count} positive, {tl_negative_count} negative examples")
                 if tl_learner == "andante":
                     st.write("Launching a centralized Andante run on this native example (no federation, single process)…")
+                elif tl_learner == "mdl":
+                    st.write("Launching a centralized MaxSynth (noisy-MDL) run — generate, test, combine via MaxSAT, constrain (no federation, single process)…")
                 else:
                     st.write("Launching a centralized Popper 1.1.0 run (no federation, single process)…")
                 try:
@@ -1831,6 +1840,13 @@ with try_learn_tab:
                             "This usually means Andante isn't installed in "
                             "this environment yet (`pip install -e "
                             "symbolic/andante`)."
+                        )
+                    elif stored_result.get("system") == "MaxSynth (MDL)":
+                        st.caption(
+                            "This usually means MaxSynth's dependencies "
+                            "(clingo, pyswip + SWI-Prolog, and `python-sat` "
+                            "for the MaxSAT combine step) aren't installed "
+                            "in this environment yet."
                         )
                     else:
                         st.caption(
@@ -2235,7 +2251,7 @@ with custom_ilp_tab:
                 with learn_col_1:
                     custom_system = st.radio(
                         "System",
-                        options=["Popper", "Andante"],
+                        options=["Popper", "Andante", "MaxSynth (MDL)"],
                         horizontal=True,
                         key="custom_ilp_system",
                     )
@@ -2253,22 +2269,29 @@ with custom_ilp_tab:
                         custom_file.name.rsplit(".", 1)[0], fallback="dataset"
                     )
 
-                    if custom_system == "Popper":
-                        dataset_dir = DATASETS_DIRECTORY / custom_dataset_name
-                        dataset_dir.mkdir(parents=True, exist_ok=True)
-                        for fname, content in popper_files.items():
-                            (dataset_dir / fname).write_text(content, encoding="utf-8")
-                    else:
+                    if custom_system == "Andante":
                         andante_dir = DATASETS_DIRECTORY / "andante"
                         andante_dir.mkdir(parents=True, exist_ok=True)
                         (andante_dir / f"{custom_dataset_name}.pl").write_text(
                             andante_text, encoding="utf-8"
                         )
+                    else:
+                        # Both Popper and MaxSynth (MDL) consume the same
+                        # bias.pl/bk.pl/exs.pl dataset directory format.
+                        dataset_dir = DATASETS_DIRECTORY / custom_dataset_name
+                        dataset_dir.mkdir(parents=True, exist_ok=True)
+                        for fname, content in popper_files.items():
+                            (dataset_dir / fname).write_text(content, encoding="utf-8")
 
                     from core.launcher import ExperimentLauncher
                     from core.experiment import ExperimentConfig
 
-                    custom_learner = "andante" if custom_system == "Andante" else "popper"
+                    if custom_system == "Andante":
+                        custom_learner = "andante"
+                    elif custom_system == "MaxSynth (MDL)":
+                        custom_learner = "mdl"
+                    else:
+                        custom_learner = "popper"
                     custom_run_error: str | None = None
                     custom_experiment_id: int | None = None
 

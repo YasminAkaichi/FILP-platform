@@ -418,6 +418,11 @@ ICON_GEAR = (
     '<path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5"/>'
     '<path d="M17.8 6.2l-1.6 1.6M7.8 16.2l-1.6 1.6M17.8 17.8l-1.6-1.6M7.8 7.8 6.2 6.2"/></svg>'
 )
+ICON_MERGE = (
+    f'<svg {_METHOD_ICON_ATTRS}><circle cx="6" cy="6" r="2.6"/>'
+    '<circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="12" r="2.6"/>'
+    '<path d="M8.3 7.1 15.7 11M8.3 16.9 15.7 13"/></svg>'
+)
 
 APPROACHES = {
     "consensus": {
@@ -439,6 +444,13 @@ APPROACHES = {
         "icon": ICON_GEAR,
         "description": "Clients coordinate the search process to learn a global program.",
         "chip": "Coordinated search",
+        "available": True,
+    },
+    "mdl_federation": {
+        "label": "Learning by MDL Federation",
+        "icon": ICON_MERGE,
+        "description": "Clients test server-generated candidates on their own noisy data; a final MaxSAT combine picks the MDL-optimal program (FedMDL).",
+        "chip": "Noise-tolerant federation",
         "available": True,
     },
 }
@@ -506,7 +518,7 @@ if current_step == 1:
     st.markdown("### 1. Choose a learning approach")
     st.write("")
 
-    method_columns = st.columns(3)
+    method_columns = st.columns(len(APPROACHES))
 
     for column, (key, approach) in zip(method_columns, APPROACHES.items()):
         with column:

@@ -7,5 +7,7 @@ streamlit
 pandas
 parsimonious
 google-generativeai
+python-sat
 -e ./symbolic/andante
 -e ./symbolic/popper-core
+-e ./symbolic/Popper-v3

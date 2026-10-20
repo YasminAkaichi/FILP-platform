@@ -7,6 +7,7 @@ Approach = Literal[
     "consensus",
     "coordination",
     "centralized",
+    "mdl_federation",
 ]
 
 PartitionStrategy = Literal[
@@ -16,7 +17,9 @@ PartitionStrategy = Literal[
 
 Learner = Literal[
     "popper",
+    "popper-v4",
     "andante",
+    "mdl",
 ]
 
 
@@ -58,6 +61,7 @@ class ExperimentConfig:
             "popper",
             "popper-v4",
             "andante",
+            "mdl",
         }:
             raise ValueError(
                 f"Unsupported learner: {self.learner}"

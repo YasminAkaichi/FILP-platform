@@ -92,6 +92,7 @@ METHOD_STYLE = {
     "consensus": ("#7C5CFC", "#EFEAFE", "Consensus"),
     "collaboration": ("#3E7BFA", "#E8F0FE", "Collaboration"),
     "coordination": ("#E08A2B", "#FCEEDD", "Coordination"),
+    "mdl_federation": ("#2A9D8F", "#E3F5F3", "MDL Federation"),
 }
 
 

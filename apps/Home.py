@@ -5,7 +5,10 @@ from pathlib import Path
 
 import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+# apps/Home.py -> the repository root is two levels up (parents[1]); a bare
+# `.parent` would be apps/ and `import database` would then fail unless the
+# working directory happened to be on sys.path.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

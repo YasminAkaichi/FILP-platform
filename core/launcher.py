@@ -64,7 +64,19 @@ class ExperimentLauncher:
                     repository=repository,
                     process_tracker=process_tracker,
                 )
+            elif config.approach == "mdl_federation":
+                self._run_mdl_federation(
+                    config=config,
+                    experiment_id=experiment_id,
+                    repository=repository,
+                    process_tracker=process_tracker,
+                )
             elif config.approach == "centralized":
+                # Covers three single-learner, no-client, no-server
+                # runs, selected via config.learner: "popper" (default),
+                # "andante", and "mdl" — MaxSynth / noisy-MDL, "Learning
+                # MDL Logic Programs From Noisy Data" (Hocquette,
+                # Niskanen, Jarvisalo & Cropper, 2023).
                 self._run_centralized(
                     config=config,
                     experiment_id=experiment_id,
@@ -1303,6 +1315,203 @@ class ExperimentLauncher:
             self._stop_processes(
                 processes
             )
+
+    def _run_mdl_federation(
+        self,
+        config: ExperimentConfig,
+        experiment_id: int,
+        repository: ExperimentRepository,
+        process_tracker: dict | None = None,
+    ) -> None:
+        """
+        FedMDL: federated MaxSynth / noisy-MDL. Same client/server process
+        shape as _run_collaboration (one Flower server, N clients, each on
+        its own partition) — see engines/mdl_federation/strategy/fedmdl.py
+        for how the search/combine protocol itself differs from FedPopper.
+
+        NOTE: unlike the other federated approaches, FedMDL clients don't
+        report a confusion matrix / accepted-solution verdict for the
+        FINAL combined program — each client only ever sees individual
+        candidate rules during the search, never the server's final
+        MaxSAT-combined result (see engines/mdl_federation/client.py).
+        So, for now, only the server's result is persisted here; per-client
+        rows (client_N_result.json exist on disk, written by each client's
+        save_client_result(), but intentionally not parsed into
+        ClientResult here, since that dataclass's tp/fn/fp/accepted_solution
+        fields don't have an FedMDL-client equivalent yet without
+        misrepresenting what each client actually observed).
+        """
+
+        server_dataset = DATASETS_DIR / config.dataset
+
+        if not server_dataset.is_dir():
+            raise FileNotFoundError(
+                f"Server dataset not found: {server_dataset}"
+            )
+
+        client_datasets = self._prepare_client_datasets(config)
+
+        server_bind_address = self._get_server_bind_address(
+            config.server_address
+        )
+
+        experiment_directory = (
+            PROJECT_ROOT
+            / "artifacts"
+            / f"experiment_{experiment_id}"
+        )
+        experiment_directory.mkdir(parents=True, exist_ok=True)
+
+        server_command = [
+            sys.executable,
+            "-m",
+            "engines.mdl_federation.server",
+            "--dataset",
+            str(server_dataset),
+            "--clients",
+            str(config.number_of_clients),
+            "--timeout",
+            str(config.timeout),
+            "--address",
+            server_bind_address,
+            "--output-dir",
+            str(experiment_directory),
+            "--timing-mode",
+            config.timing_mode,
+        ]
+
+        print("\n========== STARTING FEDMDL EXPERIMENT ==========")
+        print(f"Approach          : {config.approach}")
+        print(f"Dataset           : {config.dataset}")
+        print(f"Clients           : {config.number_of_clients}")
+        print(f"Partition strategy: {config.partition_strategy}")
+        print(f"Server address    : {config.server_address}")
+        print("==================================================\n")
+
+        processes: list[subprocess.Popen] = []
+        client_processes: list[subprocess.Popen] = []
+
+        if process_tracker is not None:
+            process_tracker["processes"] = processes
+
+        try:
+            print("[Launcher] Starting FedMDL server...")
+
+            server_process = subprocess.Popen(
+                server_command,
+                cwd=PROJECT_ROOT,
+            )
+            processes.append(server_process)
+
+            self._wait_for_server_ready(
+                config.server_address,
+                server_process,
+            )
+
+            if server_process.poll() is not None:
+                raise RuntimeError(
+                    "The FedMDL server stopped during startup."
+                )
+
+            for client_id, client_dataset in enumerate(client_datasets, start=1):
+                client_command = [
+                    sys.executable,
+                    "-m",
+                    "engines.mdl_federation.client",
+                    "--client-id",
+                    str(client_id),
+                    "--dataset",
+                    str(client_dataset),
+                    "--server-address",
+                    config.server_address,
+                    "--output-dir",
+                    str(experiment_directory),
+                ]
+
+                print(
+                    f"[Launcher] Starting FedMDL client {client_id} "
+                    f"with dataset {client_dataset.name}..."
+                )
+
+                client_process = subprocess.Popen(
+                    client_command,
+                    cwd=PROJECT_ROOT,
+                )
+                processes.append(client_process)
+                client_processes.append(client_process)
+
+            server_return_code = server_process.wait()
+
+            if server_return_code != 0:
+                raise RuntimeError(
+                    "The FedMDL server exited with code "
+                    f"{server_return_code}."
+                )
+
+            for client_id, client_process in enumerate(client_processes, start=1):
+                try:
+                    client_process.wait(timeout=30)
+                except subprocess.TimeoutExpired as error:
+                    raise RuntimeError(
+                        f"FedMDL client {client_id} did not stop within "
+                        "30 seconds after the server finished."
+                    ) from error
+
+            server_result_path = experiment_directory / "server_result.json"
+
+            if not server_result_path.is_file():
+                raise FileNotFoundError(
+                    f"Server result file not found: {server_result_path}"
+                )
+
+            server_data = json.loads(
+                server_result_path.read_text(encoding="utf-8")
+            )
+
+            server_result = ServerResult(
+                solution=server_data.get("solution"),
+                solution_found=bool(server_data.get("solution_found", False)),
+                total_time=float(server_data.get("total_time", 0.0)),
+                startup_time=float(server_data.get("startup_time", 0.0)),
+                learning_time=float(server_data.get("learning_time", 0.0)),
+                popper_time=float(server_data.get("popper_time", 0.0)),
+                federation_time=float(server_data.get("federation_time", 0.0)),
+                federation_ratio=float(server_data.get("federation_ratio", 0.0)),
+                number_of_rounds=int(server_data.get("number_of_rounds", 0)),
+                number_of_programs=int(server_data.get("number_of_programs", 0)),
+                final_score=float(server_data.get("final_score", 0.0)),
+                tp=int(server_data.get("tp", 0)),
+                fn=int(server_data.get("fn", 0)),
+                tn=int(server_data.get("tn", 0)),
+                fp=int(server_data.get("fp", 0)),
+            )
+
+            repository.save_server_result(
+                experiment_id=experiment_id,
+                result=server_result,
+                all_clients_accepted=server_result.solution_found,
+            )
+
+            hypothesis_log_path = experiment_directory / "hypothesis_log.json"
+
+            if hypothesis_log_path.is_file():
+                hypothesis_log_entries = json.loads(
+                    hypothesis_log_path.read_text(encoding="utf-8")
+                )
+                repository.save_hypothesis_log(
+                    experiment_id=experiment_id,
+                    entries=hypothesis_log_entries,
+                )
+
+            print("\n[Launcher] FedMDL experiment completed successfully.")
+
+        except KeyboardInterrupt:
+            print("\n[Launcher] FedMDL experiment interrupted by the user.")
+            raise
+
+        finally:
+            self._stop_processes(processes)
+
     def _run_centralized(
         self,
         config: ExperimentConfig,
@@ -1314,33 +1523,38 @@ class ExperimentLauncher:
         whole dataset — no clients, no server, no network. This is what
         "Try & Learn" on the Inductive Logic Programming page triggers.
 
-        Two learners are supported via config.learner:
+        Three learners are supported via config.learner (the
+        "noisy_mdl" approach forces learner="mdl" from the wizard):
           - "popper" (default): Popper 1.1.0 (popper-core)
           - "andante": Andante, a Progol-style ILP system already used
             by Learning by Consensus
+          - "mdl": MaxSynth / noisy-MDL (symbolic/Popper-v3), the
+            generate-test-combine-constrain engine from "Learning MDL
+            Logic Programs From Noisy Data" (arXiv:2308.09393)
 
-        Both run as a SUBPROCESS, not in-process. For Popper, this is
-        required: popper-core's timeout uses signal.alarm(), which only
-        works in a process's main thread, and Streamlit executes each
-        page in a worker thread — calling learn_solution() directly from
-        a Streamlit callback fails with "signal only works in main
-        thread of the main interpreter". Andante has no such constraint,
-        but is run the same way for consistency and so a pathological
-        run can still be killed on timeout without risking the Streamlit
-        process itself.
+        All three run as a SUBPROCESS, not in-process. For Popper and
+        MaxSynth, this is required: both use signal.alarm() for their
+        internal timeout, which only works in a process's main thread,
+        and Streamlit executes each page in a worker thread — calling
+        learn_solution() directly from a Streamlit callback fails with
+        "signal only works in main thread of the main interpreter".
+        Andante has no such constraint, but is run the same way for
+        consistency and so a pathological run can still be killed on
+        timeout without risking the Streamlit process itself.
         """
 
         learner = config.learner or "popper"
-        runner_module = (
-            "engines.centralized.andante_runner"
-            if learner == "andante"
-            else "engines.centralized.runner"
-        )
-        learner_label = (
-            "Andante"
-            if learner == "andante"
-            else "Popper 1.1.0, popper-core"
-        )
+        if learner == "andante":
+            runner_module = "engines.centralized.andante_runner"
+        elif learner == "mdl":
+            runner_module = "engines.centralized.mdl_runner"
+        else:
+            runner_module = "engines.centralized.runner"
+
+        learner_label = {
+            "andante": "Andante",
+            "mdl": "MaxSynth / noisy MDL, Popper-v3",
+        }.get(learner, "Popper 1.1.0, popper-core")
 
         if learner == "andante":
             # Native Andante examples are single .pl files under
@@ -1352,6 +1566,8 @@ class ExperimentLauncher:
                     f"Andante dataset not found: {dataset_path}"
                 )
         else:
+            # Both "popper" and "mdl" consume the same bias.pl/bk.pl/exs.pl
+            # dataset directory format.
             dataset_path = DATASETS_DIR / config.dataset
             if not dataset_path.is_dir():
                 raise FileNotFoundError(
