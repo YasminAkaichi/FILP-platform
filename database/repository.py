@@ -28,9 +28,10 @@ class ExperimentRepository:
                     rounds,
                     timeout,
                     server_address,
-                    status
+                    status,
+                    reference_experiment_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now,
@@ -45,6 +46,7 @@ class ExperimentRepository:
                     getattr(config, "timeout", None),
                     config.server_address,
                     "RUNNING",
+                    getattr(config, "reference_experiment_id", None),
                 ),
             )
 
@@ -428,9 +430,10 @@ class ExperimentRepository:
                     rounds,
                     timeout,
                     server_address,
-                    status
+                    status,
+                    reference_benchmark_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     config.name,
@@ -446,6 +449,7 @@ class ExperimentRepository:
                     getattr(config, "timeout", None),
                     config.server_address,
                     "RUNNING",
+                    getattr(config, "reference_benchmark_id", None),
                 ),
             )
 

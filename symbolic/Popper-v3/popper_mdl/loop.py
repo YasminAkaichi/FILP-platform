@@ -17,6 +17,7 @@ from . variants import find_variants
 WITH_OPTIMISATIONS = True
 # WITH_OPTIMISATIONS = False
 
+#python3 run_popper_mdl.py examples/noisy-zendo2-10 --noisy --timeout 120 --stats 
 pruned2 = set()
 
 # find unsat cores
@@ -479,10 +480,6 @@ def load_solver(settings, tester):
         return Combiner(settings, tester)
 
         # settings.lex = True
-
-
-
-
 
 
 def popper(settings):

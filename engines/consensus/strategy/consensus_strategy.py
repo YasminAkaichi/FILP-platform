@@ -113,6 +113,15 @@ class ConsensusStrategy(FedAvg):
             dict[str, Any]
         ] = []
 
+        # Cost measurements (one entry per client / per direction).
+        self.induction_times: dict[str, float] = {}
+        self.upload_bytes: dict[str, int] = {}
+        self.ensemble_bytes: int = 0
+
+        # client_id -> [{hypothesis, tp, fn, tn, fp}, ...]: coverage of each
+        # hypothesis on that client's own training data.
+        self.local_coverage: dict[str, list[dict[str, Any]]] = {}
+
     def initialize_parameters(
         self,
         client_manager: ClientManager,
@@ -195,6 +204,17 @@ class ConsensusStrategy(FedAvg):
                 [],
             )
 
+            client_key = str(
+                payload.get("client_id", client_proxy.cid)
+            )
+            self.induction_times[client_key] = float(
+                fit_res.metrics.get("induction_time", 0.0)
+            )
+            self.upload_bytes[client_key] = sum(
+                len(tensor)
+                for tensor in fit_res.parameters.tensors
+            )
+
             if not hypothesis:
                 log.warning(
                     "Client %s learned an empty hypothesis.",
@@ -254,6 +274,12 @@ class ConsensusStrategy(FedAvg):
         # It is the ensemble [H1, ..., Hk].
         parameters_aggregated = _encode_json(
             ensemble
+        )
+
+        # Size of the ensemble sent back to EACH client.
+        self.ensemble_bytes = sum(
+            len(tensor)
+            for tensor in parameters_aggregated.tensors
         )
 
         metrics = {
@@ -348,6 +374,7 @@ class ConsensusStrategy(FedAvg):
             "precision",
             "recall",
             "f1",
+            "mcc",
             "n_hypotheses",
         )
 
@@ -378,6 +405,16 @@ class ConsensusStrategy(FedAvg):
                     reference_metrics,
                     comparable_metrics,
                 )
+
+        # Local coverage of every hypothesis on each client's own data.
+        for client_proxy, evaluate_res in results:
+            metrics = evaluate_res.metrics
+            try:
+                self.local_coverage[
+                    str(metrics.get("client_id", client_proxy.cid))
+                ] = json.loads(metrics.get("local_coverage", "[]"))
+            except (TypeError, json.JSONDecodeError):
+                pass
 
         # --------------------------------------------------------
         # 3. Recover detailed prediction traces

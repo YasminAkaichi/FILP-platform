@@ -89,12 +89,22 @@ class ExperimentLauncher:
                 # "andante", and "mdl" — MaxSynth / noisy-MDL, "Learning
                 # MDL Logic Programs From Noisy Data" (Hocquette,
                 # Niskanen, Jarvisalo & Cropper, 2023).
-                self._run_centralized(
-                    config=config,
-                    experiment_id=experiment_id,
-                    repository=repository,
-                    control=control,
-                )
+                if config.reference_experiment_id is not None:
+                    # "Run centralized on the same data" from the
+                    # Experiments page: same split as a consensus run.
+                    self._run_centralized_on_split(
+                        config=config,
+                        experiment_id=experiment_id,
+                        repository=repository,
+                        control=control,
+                    )
+                else:
+                    self._run_centralized(
+                        config=config,
+                        experiment_id=experiment_id,
+                        repository=repository,
+                        control=control,
+                    )
             else:
                 raise NotImplementedError(
                     f"The approach '{config.approach}' is not implemented yet."
@@ -696,10 +706,35 @@ class ExperimentLauncher:
         if control is not None:
             control.register_directory(consensus_output_directory)
 
-        # 5. Start Consensus Flower server
-        # --------------------------------------------------
+        # Andante reads ONE native .pl file per dataset, whereas the
+        # partitioner writes Popper directories (bias/bk/exs). The same
+        # partitions are converted, so both learners see the same data.
+        consensus_test_dataset = global_test_dataset
+        consensus_client_datasets = list(client_datasets)
 
-        
+        if config.learner == "andante":
+            from partitioning.popper_to_andante import (
+                convert_popper_to_andante,
+            )
+
+            def _to_andante_file(directory):
+                directory = Path(directory)
+                if directory.is_file():
+                    return directory
+                return convert_popper_to_andante(
+                    directory,
+                    directory.parent / f"{directory.name}.andante.pl",
+                )
+
+            consensus_test_dataset = _to_andante_file(
+                global_test_dataset
+            )
+            consensus_client_datasets = [
+                _to_andante_file(directory)
+                for directory in client_datasets
+            ]
+
+
         server_bind_address = self._get_server_bind_address(
             config.server_address
         )
@@ -744,7 +779,7 @@ class ExperimentLauncher:
             # --------------------------------------------------
 
             for client_id, client_dataset in enumerate(
-                client_datasets,
+                consensus_client_datasets,
                 start=1,
             ):
                 client_command = [
@@ -758,7 +793,7 @@ class ExperimentLauncher:
                     "--dataset",
                     str(client_dataset),
                     "--test-dataset",
-                    str(global_test_dataset),
+                    str(consensus_test_dataset),
                     "--server-address",
                     config.server_address,
                     "--timeout",
@@ -1804,6 +1839,137 @@ class ExperimentLauncher:
             f"({'solution found' if server_result.solution_found else 'no solution'} "
             f"in {server_result.total_time:.2f}s, "
             f"{server_result.number_of_programs} programs tested)."
+        )
+
+    def _run_centralized_on_split(
+        self,
+        config: ExperimentConfig,
+        experiment_id: int,
+        repository: ExperimentRepository,
+        control: RunControl | None = None,
+    ) -> None:
+        """Centralized baseline of a consensus run.
+
+        Same dataset, same seed, hence the same train/test split as the
+        consensus experiment (the split only depends on the dataset and the
+        seed). The learner (Popper-v4 or Andante) runs ONCE on the whole
+        training set, no clients and no Flower, and its hypothesis is scored
+        on the common test set.
+        """
+        source_directory = DATASETS_DIR / config.dataset
+        if not source_directory.is_dir():
+            raise FileNotFoundError(f"Source dataset not found: {source_directory}")
+
+        test_ratio = 0.2
+        dataset = read_dataset(source_directory)
+        train_dataset, test_dataset = split_train_test(
+            dataset=dataset,
+            test_ratio=test_ratio,
+            random_seed=config.random_seed,
+        )
+        # One partition holding the whole training set.
+        partitions = partition_dataset(
+            dataset=train_dataset,
+            number_of_clients=1,
+            strategy="iid",
+            random_seed=config.random_seed,
+        )
+        split_directory = write_consensus_dataset(
+            dataset_name=config.dataset,
+            train_partitions=partitions,
+            test_dataset=test_dataset,
+            strategy="iid",
+            random_seed=config.random_seed,
+            test_ratio=test_ratio,
+            output_root=DATASETS_DIR / "generated",
+        )
+        train_path = split_directory / "train" / f"{config.dataset}_part1"
+        test_path = split_directory / "test"
+
+        if config.learner == "andante":
+            from partitioning.popper_to_andante import convert_popper_to_andante
+
+            train_path = convert_popper_to_andante(
+                train_path, train_path.parent / f"{train_path.name}.andante.pl"
+            )
+            test_path = convert_popper_to_andante(
+                test_path, test_path.parent / f"{test_path.name}.andante.pl"
+            )
+
+        output_directory = (
+            PROJECT_ROOT / "artifacts" / f"experiment_{experiment_id}" / "consensus"
+        )
+        output_directory.mkdir(parents=True, exist_ok=True)
+        if control is not None:
+            control.register_directory(output_directory)
+
+        print("\n========== CENTRALIZED RUN ON THE CONSENSUS SPLIT ==========")
+        print(f"Consensus experiment : #{config.reference_experiment_id}")
+        print(f"Learner / dataset    : {config.learner} / {config.dataset}")
+        print(f"Seed                 : {config.random_seed}")
+        print("=============================================================\n")
+
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "engines.consensus.centralized_baseline",
+                "--learner", config.learner,
+                "--dataset", str(train_path),
+                "--test-dataset", str(test_path),
+                "--output-dir", str(output_directory),
+                "--timeout", str(config.timeout),
+            ],
+            cwd=PROJECT_ROOT,
+        )
+        return_code = self._wait_for(
+            process,
+            control,
+            hard_timeout=config.timeout + 60,
+            grace_seconds=3.0,
+        )
+        if return_code != 0:
+            raise RuntimeError(
+                f"The centralized {config.learner} run exited with code {return_code}."
+            )
+
+        result = json.loads(
+            (output_directory / "server_result.json").read_text(encoding="utf-8")
+        )
+        analysis = json.loads(
+            (output_directory / "consensus_analysis.json").read_text(encoding="utf-8")
+        )
+        metrics = result["metrics"]
+        hypothesis = result["hypotheses"][0] if result["hypotheses"] else []
+        learning_time = float(
+            (analysis.get("induction_time_per_client") or {}).get("1", 0.0)
+        )
+
+        server_result = ServerResult(
+            solution="\n".join(hypothesis) if hypothesis else None,
+            solution_found=bool(hypothesis),
+            total_time=float(analysis.get("federated_round_seconds", learning_time)),
+            startup_time=0.0,
+            learning_time=learning_time,
+            popper_time=learning_time,
+            federation_time=0.0,
+            federation_ratio=0.0,
+            number_of_rounds=1,
+            number_of_programs=0,
+            final_score=float(metrics["accuracy"]),
+            tp=int(metrics["tp"]),
+            fn=int(metrics["fn"]),
+            tn=int(metrics["tn"]),
+            fp=int(metrics["fp"]),
+        )
+        repository.save_server_result(
+            experiment_id=experiment_id,
+            result=server_result,
+            all_clients_accepted=server_result.solution_found,
+        )
+        print(
+            "\n[Launcher] Centralized baseline saved "
+            f"(accuracy {metrics['accuracy']:.3f} on the common test set)."
         )
 
     def _get_client_datasets_old(

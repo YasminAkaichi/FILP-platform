@@ -5,6 +5,8 @@ from core.experiment import ExperimentConfig
 from core.launcher import ExperimentLauncher
 from core.run_control import RunControl, RunStopped
 from database.repository import ExperimentRepository
+from database.schema import initialize_database
+from database.connection import get_connection
 
 
 class BenchmarkLauncher:
@@ -20,6 +22,7 @@ class BenchmarkLauncher:
         remaining runs. Raises RunStopped if no run produced a result.
         """
         config.validate()
+        initialize_database()  # make sure the link columns exist
 
         repository = ExperimentRepository()
         experiment_launcher = ExperimentLauncher()
@@ -46,7 +49,30 @@ class BenchmarkLauncher:
                     break
 
                 #random_seed = config.base_seed + run_number - 1
-                random_seed = config.base_seed
+                # Consensus experiments need independent splits per run
+                # (mean +- std over seeds); other approaches keep the same
+                # split so they stay comparable run to run.
+                reference_experiment_id = None
+                if config.reference_benchmark_id is not None:
+                    # Centralized baseline: run i mirrors run i of the
+                    # consensus benchmark (same dataset, seed, split).
+                    with get_connection() as connection:
+                        reference = connection.execute(
+                            "SELECT experiment_id, random_seed FROM benchmark_runs "
+                            "WHERE benchmark_id = ? AND run_number = ?",
+                            (config.reference_benchmark_id, run_number),
+                        ).fetchone()
+                    if reference is None:
+                        raise ValueError(
+                            f"Consensus benchmark {config.reference_benchmark_id} "
+                            f"has no run {run_number}."
+                        )
+                    reference_experiment_id = int(reference["experiment_id"])
+                    random_seed = int(reference["random_seed"])
+                elif config.approach == "consensus":
+                    random_seed = config.base_seed + run_number - 1
+                else:
+                    random_seed = config.base_seed
 
                 print(
                     f"\n========== BENCHMARK RUN "
@@ -65,6 +91,7 @@ class BenchmarkLauncher:
                     timeout=config.timeout,
                     timing_mode=config.timing_mode,
                     server_address=config.server_address,
+                    reference_experiment_id=reference_experiment_id,
                 )
 
                 experiment_id = experiment_launcher.run(

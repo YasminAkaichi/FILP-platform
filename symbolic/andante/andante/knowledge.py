@@ -227,7 +227,15 @@ class TreeShapedKnowledge(Knowledge):
             elif isinstance(term, Variable):
                 sets.append(self.clausesbyoperator[name])
             elif isinstance(term, Function):
-                sets.append(term_dict['Funcs'].match(term))
+                if 'Funcs' in term_dict:
+                    sets.append(term_dict['Funcs'].match(term))
+                else:
+                    # No stored clause has a compound term at this position
+                    # (e.g. a client partition without any fact like
+                    # r_subst_1(a, single_alk(1))): only clauses with a
+                    # variable here can still match. This used to raise
+                    # KeyError: 'Funcs'.
+                    sets.append(term_dict['Vars'])
             elif isinstance(term, List):
                 # Symmetric to the 'Vars' fallback used in add(): don't
                 # try to filter by list structure, just take every

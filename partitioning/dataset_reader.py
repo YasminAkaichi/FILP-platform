@@ -45,6 +45,21 @@ def read_dataset(dataset_directory: Path) -> Dataset:
         background_path
     )
 
+    # A fact is only attributed to an example when the identifier read from
+    # it really is one of the examples' identifiers. Otherwise (e.g. a
+    # compound called "d1" in a dataset whose examples are pairs, or a
+    # molecule that is not an example) the fact stays shared: guessing the
+    # owner from a naming convention that does not apply would silently
+    # delete knowledge from every client.
+    known_identifiers = {
+        _inner_identifier(example.identifier)
+        for example in positive_examples + negative_examples
+    }
+
+    for fact in facts:
+        if fact.example_identifier not in known_identifiers:
+            fact.example_identifier = None
+
     bias = bias_path.read_text(
         encoding="utf-8"
     )
@@ -57,6 +72,17 @@ def read_dataset(dataset_directory: Path) -> Dataset:
         rules=rules,
         bias=bias,
     )
+
+
+def _inner_identifier(example_identifier: str) -> str:
+    """zendo(10) -> "10", f(t10) -> "t10", great(a1,b1) -> "a1,b1"."""
+    start = example_identifier.find("(")
+    end = example_identifier.rfind(")")
+
+    if start == -1 or end == -1 or end <= start:
+        return example_identifier
+
+    return example_identifier[start + 1:end].strip()
 
 
 def _read_examples(
@@ -178,20 +204,61 @@ def _infer_example_identifier(
     fact: str,
 ) -> str | None:
     """
-    Infer the Zendo-style example identifier.
+    Infer which example a background-knowledge fact describes, so each
+    client only receives the facts about ITS OWN examples.
 
-    Examples:
+    Two naming conventions are recognised; the identifier returned is the
+    one `partitioner._extract_numeric_identifier` produces from the
+    example's own identifier:
+
+    Zendo-style (example zendo(10)):
         blue(p10_1).             -> "10"
         contact(p10_0, p10_3).  -> "10"
 
+    Trains-style (example f(t10)):
+        circle(t10_c2_l1).       -> "t10"
+        has_car(t10, t10_c1).    -> "t10"
+
     Facts without an indexed term return None and are considered shared.
     """
+    # Look at the arguments only, not at the predicate name.
+    arguments = fact.split("(", 1)[1] if "(" in fact else fact
+
     match = re.search(
         r"\bp(\d+)_\d+\b",
-        fact,
+        arguments,
     )
 
-    if not match:
-        return None
+    if match:
+        return match.group(1)
 
-    return match.group(1)
+    match = re.search(
+        r"\b(t\d+)(?:_\w+)?\b",
+        arguments,
+    )
+
+    if match:
+        return match.group(1)
+
+    # Molecule-style (mutagenesis, carcinogenesis; example active(d18)):
+    #     atm(d18, d18_3, c, 22, -0.1).  -> "d18"
+    #     bond(d18, d18_1, d18_2, 7).    -> "d18"
+    match = re.search(
+        r"\b(d\d+)(?:_\d+)?\b",
+        arguments,
+    )
+
+    if match:
+        return match.group(1)
+
+    # Intubation-style (example complication(patient12)):
+    #     age(patient12, 71).     -> "patient12"
+    match = re.search(
+        r"\b(patient\d+)\b",
+        arguments,
+    )
+
+    if match:
+        return match.group(1)
+
+    return None

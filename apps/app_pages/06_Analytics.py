@@ -19,6 +19,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.connection import get_connection
+from database.schema import initialize_database
+
+initialize_database()  # applies pending column migrations
 from core.experiment import Approach as _Approach
 
 # Canonical list of every approach the platform supports (not just the ones
@@ -38,7 +41,7 @@ st.set_page_config(
 
 if hasattr(st, "logo"):
     try:
-        st.logo(str(PROJECT_ROOT / "assets" / "filp_wordmark_white.svg"), size="large")
+        st.logo(str(PROJECT_ROOT / "assets" / "filp_sidebar_logo.png"), size="large")
     except Exception:
         pass
 
@@ -49,28 +52,28 @@ if hasattr(st, "logo"):
 # ---------------------------------------------------------------------
 
 PALETTE = {
-    "bg_card": "#F6F8FC",
-    "border": "#E2E8F5",
+    "bg_card": "#F3F4F6",
+    "border": "#E5E7EB",
     "text_muted": "#5B6472",
     "text": "#1F2430",
-    "primary": "#3E63DE",
-    "primary_soft": "#EAF0FE",
-    "success": "#2F9E63",
-    "success_soft": "#E7F6EE",
-    "warning": "#C98A1F",
-    "warning_soft": "#FCF1DE",
-    "error": "#D1554B",
-    "error_soft": "#FBEAE8",
+    "primary": "#1B2A4C",
+    "primary_soft": "#F3F4F6",
+    "success": "#1B2A4C",
+    "success_soft": "#E5E7EB",
+    "warning": "#1B2A4C",
+    "warning_soft": "#E5E7EB",
+    "error": "#1B2A4C",
+    "error_soft": "#F3F4F6",
     "neutral": "#8A93A3",
-    "neutral_soft": "#EEF1F6",
+    "neutral_soft": "#F3F4F6",
     "sidebar_bg": "#0F1B33",
-    "sidebar_text": "#C7D2EC",
-    "sidebar_text_muted": "#7C87A6",
+    "sidebar_text": "#E5E7EB",
+    "sidebar_text_muted": "#1B2A4C",
     "sidebar_active_bg": "#1B2A4C",
     "sidebar_border": "#22314F",
 }
 
-CHART_COLORS = ["#3E63DE", "#7FB88F", "#E8A85C", "#C97BB0", "#6BB6C9", "#B99BD8"]
+CHART_COLORS = ["#1B2A4C", "#1B2A4C", "#C9CED8", "#C9CED8", "#1B2A4C", "#C9CED8"]
 
 STATUS_STYLE = {
     "completed": (PALETTE["success"], PALETTE["success_soft"], "✓"),
@@ -85,11 +88,11 @@ STATUS_STYLE = {
 # Same as 05_Experiments.py, plus "centralized" (a real 4th approach in the
 # schema that the Experiments page currently leaves un-styled/neutral).
 METHOD_STYLE = {
-    "consensus": ("#7C5CFC", "#EFEAFE", "Consensus"),
-    "collaboration": ("#3E7BFA", "#E8F0FE", "Collaboration"),
-    "coordination": ("#E08A2B", "#FCEEDD", "Coordination"),
-    "centralized": ("#2A9D8F", "#E3F5F3", "Centralized"),
-    "mdl_federation": ("#B45FD1", "#F3E8FA", "MDL Federation"),
+    "consensus": ("#C9CED8", "#F3F4F6", "Consensus"),
+    "collaboration": ("#1B2A4C", "#F3F4F6", "Collaboration"),
+    "coordination": ("#1B2A4C", "#E5E7EB", "Coordination"),
+    "centralized": ("#1B2A4C", "#E5E7EB", "Centralized"),
+    "mdl_federation": ("#1B2A4C", "#F3F4F6", "MDL Federation"),
 }
 
 
@@ -223,7 +226,7 @@ def inject_style() -> None:
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
         section[data-testid="stSidebar"] [data-testid="stLogo"] {{
-            height: 76px !important;
+            height: 64px !important;
             max-height: none !important;
             width: auto !important;
             max-width: 100% !important;
@@ -279,7 +282,7 @@ def inject_style() -> None:
             font-size: 27px !important;
             margin: 0 !important;
             padding: 0 !important;
-            color: #E4EAFB !important;
+            color: #E5E7EB !important;
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:last-child {{
             font-size: 18px !important;
@@ -775,8 +778,8 @@ if benchmarks_df.empty:
     st.info("No benchmark has been recorded yet. Run one from the Experiments page first.")
     st.stop()
 
-tab_overview, tab_approach, tab_compare, tab_scalability = st.tabs(
-    ["Overview", "Approach Analysis", "Compare Approaches", "Scalability"]
+tab_overview, tab_approach, tab_compare, tab_scalability, tab_consensus = st.tabs(
+    ["Overview", "Approach Analysis", "Compare Approaches", "Scalability", "Consensus"]
 )
 
 # =======================================================================
@@ -1521,6 +1524,16 @@ with tab_scalability:
 
 
 st.markdown(
-    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E5E7EB; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
     unsafe_allow_html=True,
 )
+
+
+# =======================================================================
+# TAB 5 — Consensus (figures for the experimental section)
+# =======================================================================
+
+with tab_consensus:
+    from apps.consensus_tab import render_consensus_tab
+
+    render_consensus_tab()

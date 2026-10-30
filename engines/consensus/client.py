@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +94,7 @@ def build_learner(
     if learner_name == "andante":
         return AndanteConsensusLearner(
             dataset_path=dataset_path,
+            timeout=timeout,
         )
 
     raise ValueError(f"Unknown Consensus learner: {learner_name}")
@@ -187,7 +189,9 @@ class ConsensusClient(fl.client.NumPyClient):
             self.dataset_path,
         )
 
+        induction_start = time.perf_counter()
         hypothesis, score, stats = self.learner.learn()
+        induction_time = time.perf_counter() - induction_start
         self.local_hypothesis = hypothesis
 
         log.info(
@@ -212,6 +216,7 @@ class ConsensusClient(fl.client.NumPyClient):
             "client_id": self.client_id,
             "learner": self.learner_name,
             "n_rules": len(self.local_hypothesis),
+            "induction_time": float(induction_time),
         }
 
         return encode_json(payload), num_examples, metrics
@@ -243,12 +248,15 @@ class ConsensusClient(fl.client.NumPyClient):
         # --------------------------------------------------------
 
         hypothesis_predictions = []
+        # fired_rules[h][example] = 1-based indexes of the rules of H_h
+        # that cover the example (traceability of every vote).
+        fired_rules: list[dict[str, list[int]]] = []
 
         for index, hypothesis in enumerate(
             self.received_hypotheses,
             start=1,
         ):
-            predictions = self.learner.predict(
+            predictions, fired = self.learner.predict_with_rules(
                 hypothesis,
                 self.test_dataset,
             )
@@ -256,6 +264,7 @@ class ConsensusClient(fl.client.NumPyClient):
             hypothesis_predictions.append(
                 predictions
             )
+            fired_rules.append(fired)
 
             positive_predictions = sum(
                 bool(value)
@@ -335,6 +344,11 @@ class ConsensusClient(fl.client.NumPyClient):
                     predictions[example_id]
                 )
 
+                rule_indexes = fired_rules[index - 1].get(
+                    example_id, []
+                )
+                rules_of_hypothesis = self.received_hypotheses[index - 1]
+
                 hypothesis_votes.append(
                     {
                         "hypothesis": f"H{index}",
@@ -343,6 +357,13 @@ class ConsensusClient(fl.client.NumPyClient):
                             if local_prediction
                             else "NEG"
                         ),
+                        # Which rules of H_index cover this example.
+                        "rules_fired": rule_indexes,
+                        "rules_text": [
+                            rules_of_hypothesis[i - 1]
+                            for i in rule_indexes
+                            if 0 < i <= len(rules_of_hypothesis)
+                        ],
                     }
                 )
 
@@ -413,6 +434,55 @@ class ConsensusClient(fl.client.NumPyClient):
             print(f"  {name}: {value}")
 
         # --------------------------------------------------------
+        # 6b. Coverage of every received H_i on THIS client's local
+        #     training data (computed locally; only the four counts per
+        #     hypothesis leave the client, never the examples).
+        # --------------------------------------------------------
+
+        local_coverage = []
+
+        try:
+            if self.learner_name == "popper":
+                local_labels = read_labels(
+                    self.dataset_path / "exs.pl"
+                )
+            else:
+                local_labels = read_andante_labels(
+                    self.dataset_path
+                )
+
+            for index, hypothesis in enumerate(
+                self.received_hypotheses,
+                start=1,
+            ):
+                local_predictions = self.learner.predict(
+                    hypothesis,
+                    self.dataset_path,
+                )
+                local_result = evaluate_predictions(
+                    local_labels,
+                    local_predictions,
+                )
+                local_coverage.append(
+                    {
+                        "hypothesis": f"H{index}",
+                        "tp": int(local_result["tp"]),
+                        "fn": int(local_result["fn"]),
+                        "tn": int(local_result["tn"]),
+                        "fp": int(local_result["fp"]),
+                    }
+                )
+
+        except Exception as error:  # noqa: BLE001
+            # Coverage is a diagnostic: never fail the experiment for it.
+            log.warning(
+                "Client %s could not compute its local coverage: %s",
+                self.client_id,
+                error,
+            )
+            local_coverage = []
+
+        # --------------------------------------------------------
         # 7. Send metrics + prediction traces to Flower server
         # --------------------------------------------------------
 
@@ -440,6 +510,10 @@ class ConsensusClient(fl.client.NumPyClient):
             "f1": float(
                 result["f1"]
             ),
+            "mcc": float(
+                result["mcc"]
+            ),
+            "local_coverage": json.dumps(local_coverage),
             "vote_traces": json.dumps(
                 vote_traces,
                 ensure_ascii=False,

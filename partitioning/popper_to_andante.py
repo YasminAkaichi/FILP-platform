@@ -125,10 +125,11 @@ def build_mode(
         )
 
     if predicate_directions is None:
-        raise ValueError(
-            f"Missing direction declaration for "
-            f"{predicate}/{arity}"
-        )
+        # Popper accepts a bias without directions (every mode is allowed),
+        # but Andante needs +/- modes. Default used by Progol-style
+        # biases: first argument is an input, the others are outputs
+        # (e.g. has_car(+train,-car), short(+car)).
+        predicate_directions = ["in"] + ["out"] * (arity - 1)
 
     if len(predicate_types) != arity:
         raise ValueError(
@@ -204,6 +205,49 @@ def read_examples(
     return positives, negatives
 
 
+# Andante's own Prolog-like solver has no cut and no arithmetic comparison.
+# Some Popper background-knowledge files (Mutagenesis, Carcinogenesis) have
+# SWI-Prolog helper rules that use them, e.g. `gteq(X,Y) :- ..., X >= Y, !.`,
+# and Andante's parser then rejects the WHOLE file ("Failed to parse rule").
+_UNSUPPORTED_IN_RULE = re.compile(
+    r"!|>=|=<|=:=|=\\=|\bis\b|(?<![-=:<>])[<>](?![-=:<>])"
+)
+
+
+def _drop_unsupported_rules(background: str) -> str:
+    """Remove the rules that Andante cannot parse (cut, arithmetic
+    comparison). Facts and the other rules are kept unchanged."""
+
+    statements: list[str] = []
+    current: list[str] = []
+
+    for raw_line in background.splitlines():
+        stripped = raw_line.strip()
+
+        if not stripped or stripped.startswith("%"):
+            continue
+
+        current.append(raw_line)
+
+        if stripped.endswith("."):
+            statements.append("\n".join(current))
+            current = []
+
+    if current:
+        statements.append("\n".join(current))
+
+    kept = [
+        statement
+        for statement in statements
+        if not (
+            ":-" in statement
+            and _UNSUPPORTED_IN_RULE.search(statement)
+        )
+    ]
+
+    return "\n".join(kept)
+
+
 def convert_popper_to_andante(
     source_dir: str | Path,
     output_file: str | Path,
@@ -254,6 +298,12 @@ def convert_popper_to_andante(
     # Options
     # --------------------------------------------------
 
+    # Andante's default search budget is only 100 states per clause, which
+    # is too small: on Zendo it returns an EMPTY hypothesis even with enough
+    # examples. Same values as the hand-converted datasets
+    # (datasets/andante/zendo1.pl).
+    lines.append("set(max_search_states,5000).")
+    lines.append("set(i,3).")
     lines.append("set(verbose,0).")
     lines.append("")
 
@@ -328,8 +378,8 @@ def convert_popper_to_andante(
 
         background_lines.append(raw_line)
 
-    background = "\n".join(
-        background_lines
+    background = _drop_unsupported_rules(
+        "\n".join(background_lines)
     ).strip()
 
     lines.append(background)

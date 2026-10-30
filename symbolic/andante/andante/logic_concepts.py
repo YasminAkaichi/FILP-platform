@@ -170,7 +170,19 @@ class CompoundTerm(Term, Function):
             for self_arg, other_arg in zip(self.arguments, other.arguments):
                 self_arg.unify(other_arg, subst)
         else: raise UnificationError(self, other)
-    
+
+    def to_variable_name(self, type_name=None):
+        """ Same purpose as Constant.to_variable_name(), for ground compound
+        terms such as single_alk(1) or bond(n, group(ch3, 2)) found as
+        output values in the background knowledge (e.g. Alzheimer). The name
+        comes from a stable checksum of the printed term, so the same term
+        always gets the same variable name, in every run. """
+        import zlib
+        base = 'C' + str(zlib.crc32(repr(self).encode('utf-8')) % 1000000)
+        if type_name:
+            return base + '_' + str(type_name)
+        return base
+
 class Constant(Term):
     """ Constant in first order logic
     

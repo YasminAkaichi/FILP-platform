@@ -37,7 +37,7 @@ st.set_page_config(
 
 if hasattr(st, "logo"):
     try:
-        st.logo(str(PROJECT_ROOT / "assets" / "filp_wordmark_white.svg"), size="large")
+        st.logo(str(PROJECT_ROOT / "assets" / "filp_sidebar_logo.png"), size="large")
     except Exception:
         pass
 
@@ -49,24 +49,24 @@ if hasattr(st, "logo"):
 # ---------------------------------------------------------------------
 
 PALETTE = {
-    "bg_card": "#F6F8FC",
-    "border": "#E2E8F5",
+    "bg_card": "#F3F4F6",
+    "border": "#E5E7EB",
     "text_muted": "#5B6472",
     "text": "#1F2430",
-    "primary": "#3E63DE",
-    "primary_soft": "#EAF0FE",
-    "success": "#2F9E63",
-    "success_soft": "#E7F6EE",
-    "warning": "#C98A1F",
-    "warning_soft": "#FCF1DE",
-    "error": "#D1554B",
-    "error_soft": "#FBEAE8",
+    "primary": "#1B2A4C",
+    "primary_soft": "#F3F4F6",
+    "success": "#1B2A4C",
+    "success_soft": "#E5E7EB",
+    "warning": "#1B2A4C",
+    "warning_soft": "#E5E7EB",
+    "error": "#1B2A4C",
+    "error_soft": "#F3F4F6",
     "neutral": "#8A93A3",
-    "neutral_soft": "#EEF1F6",
-    "progol": "#7C5CFC",
-    "progol_soft": "#F1ECFE",
-    "popper": "#3E7BFA",
-    "popper_soft": "#E8F0FE",
+    "neutral_soft": "#F3F4F6",
+    "progol": "#C9CED8",
+    "progol_soft": "#F3F4F6",
+    "popper": "#1B2A4C",
+    "popper_soft": "#F3F4F6",
 }
 
 NAVY = "#1B2A4C"
@@ -119,7 +119,7 @@ def inject_style() -> None:
         f"""
         <style>
         [data-testid="stAppViewContainer"], [data-testid="stMain"], .stApp {{
-            background: #F5F6F9;
+            background: #F3F4F6;
         }}
         .block-container {{
             display: flex;
@@ -130,7 +130,7 @@ def inject_style() -> None:
             padding-left: 2.2rem;
             padding-right: 2.2rem;
             max-width: 100% !important;
-            background: #F5F6F9;
+            background: #F3F4F6;
         }}
 
         div[class*="st-key-ovcard_"] {{
@@ -180,7 +180,7 @@ def inject_style() -> None:
             padding: 1rem 1.2rem;
             border-radius: 14px;
             background: {PALETTE["warning_soft"]};
-            border: 1px solid #F0DCB4;
+            border: 1px solid #C9CED8;
         }}
         .ilp-banner .banner-icon {{ display: flex; align-items: flex-start; flex-shrink: 0; padding-top: 2px; }}
         .ilp-banner .banner-body {{ color: {PALETTE["text"]}; font-size: 1.05rem; line-height: 1.55; }}
@@ -399,7 +399,7 @@ def inject_style() -> None:
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
         section[data-testid="stSidebar"] [data-testid="stLogo"] {{
-            height: 76px !important;
+            height: 64px !important;
             max-height: none !important;
             width: auto !important;
             max-width: 100% !important;
@@ -429,7 +429,7 @@ def inject_style() -> None:
             border-top: 1px solid #22314F;
         }}
         section[data-testid="stSidebar"] * {{
-            color: #C7D2EC !important;
+            color: #E5E7EB !important;
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
             border-radius: 10px;
@@ -455,7 +455,7 @@ def inject_style() -> None:
             font-size: 27px !important;
             margin: 0 !important;
             padding: 0 !important;
-            color: #E4EAFB !important;
+            color: #E5E7EB !important;
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:last-child {{
             font-size: 18px !important;
@@ -1050,7 +1050,7 @@ with overview_tab:
 <text x="150" y="121" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">ILP</text>
 <line x1="150" y1="195" x2="150" y2="216" stroke="{PALETTE["text_muted"]}" stroke-width="2"/>
 <polygon points="141,216 159,216 150,228" fill="{PALETTE["text_muted"]}"/>
-<rect x="15" y="240" width="270" height="36" rx="18" fill="{PALETTE["progol_soft"]}" stroke="#DCCBF5"/>
+<rect x="15" y="240" width="270" height="36" rx="18" fill="{PALETTE["progol_soft"]}" stroke="#E5E7EB"/>
 <text x="150" y="263" text-anchor="middle" font-size="14" font-weight="700" fill="{PALETTE["progol"]}">Interpretable logic programs</text>
 </svg>"""
                 st.markdown(
@@ -1072,7 +1072,7 @@ with overview_tab:
                 st.markdown(
                     f'<div style="min-height:105px; box-sizing:border-box;">'
                     + render_example_box(
-                        "Positive examples  E⁺", PALETTE["success"], PALETTE["success_soft"], "#BFE3CE",
+                        "Positive examples  E⁺", PALETTE["success"], PALETTE["success_soft"], "#C9CED8",
                         "pos(is_malignant(case1)).\npos(is_malignant(case3)).",
                     )
                     + "</div>",
@@ -1082,7 +1082,7 @@ with overview_tab:
                 st.markdown(
                     f'<div style="min-height:105px; box-sizing:border-box;">'
                     + render_example_box(
-                        "Negative examples  E⁻", PALETTE["error"], PALETTE["error_soft"], "#F3C6C0",
+                        "Negative examples  E⁻", PALETTE["error"], PALETTE["error_soft"], "#E5E7EB",
                         "neg(is_malignant(case2)).\nneg(is_malignant(case4)).",
                     )
                     + "</div>",
@@ -1095,7 +1095,7 @@ with overview_tab:
                 st.markdown(
                     f'<div style="min-height:130px; box-sizing:border-box;">'
                     + render_example_box(
-                        "Background knowledge  B", PALETTE["primary"], PALETTE["primary_soft"], "#C2D3F7",
+                        "Background knowledge  B", PALETTE["primary"], PALETTE["primary_soft"], "#E5E7EB",
                         "shape(case1,'Irregular').\nmargins(case1,'Spiculated').\n"
                         "shape(case2,'Round').",
                     )
@@ -1113,7 +1113,7 @@ with overview_tab:
                 st.markdown(
                     f'<div style="min-height:130px; box-sizing:border-box;">'
                     + render_example_box(
-                        "Learned hypothesis  H", PALETTE["progol"], PALETTE["progol_soft"], "#D9CCFB",
+                        "Learned hypothesis  H", PALETTE["progol"], PALETTE["progol_soft"], "#E5E7EB",
                         "is_malignant(A) :-\n    shape(A,'Irregular'),\n    margins(A,'Spiculated').",
                     )
                     + "</div>",
@@ -2547,6 +2547,6 @@ with custom_ilp_tab:
 
 
 st.markdown(
-    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E5E7EB; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
     unsafe_allow_html=True,
 )

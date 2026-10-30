@@ -35,6 +35,8 @@ class ExperimentConfig:
     rounds: int = 35000
     timeout: int = 600
     server_address: str = "localhost:8080"
+    # Centralized baseline of a consensus run: id of that consensus experiment.
+    reference_experiment_id: int | None = None
 
     def validate(self) -> None:
         if self.number_of_clients < 1:

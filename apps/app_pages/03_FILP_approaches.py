@@ -30,7 +30,7 @@ st.set_page_config(
 
 if hasattr(st, "logo"):
     try:
-        st.logo(str(ASSETS / "filp_wordmark_white.svg"), size="large")
+        st.logo(str(ASSETS / "filp_sidebar_logo.png"), size="large")
     except Exception:
         pass
 
@@ -43,18 +43,18 @@ if hasattr(st, "logo"):
 # ---------------------------------------------------------------------
 
 PALETTE = {
-    "bg_card": "#F6F8FC",
-    "border": "#E2E8F5",
+    "bg_card": "#F3F4F6",
+    "border": "#E5E7EB",
     "text_muted": "#5B6472",
     "text": "#1F2430",
-    "primary": "#5B7FDE",
-    "primary_soft": "#EAF0FE",
-    "success": "#2F9E63",
-    "success_soft": "#E7F6EE",
-    "warning": "#C98A1F",
-    "warning_soft": "#FCF1DE",
+    "primary": "#1B2A4C",
+    "primary_soft": "#F3F4F6",
+    "success": "#1B2A4C",
+    "success_soft": "#E5E7EB",
+    "warning": "#1B2A4C",
+    "warning_soft": "#E5E7EB",
     "neutral": "#8A93A3",
-    "neutral_soft": "#EEF1F6",
+    "neutral_soft": "#F3F4F6",
 }
 
 
@@ -86,14 +86,14 @@ def inject_style() -> None:
             border-color: {PALETTE["primary"]};
         }}
         div.stButton > button[kind="primary"]:hover {{
-            background-color: #4A6BC4;
-            border-color: #4A6BC4;
+            background-color: #1B2A4C;
+            border-color: #1B2A4C;
         }}
 
         .approach-hero {{
             padding: 1.8rem 2rem;
             border-radius: 18px;
-            background: linear-gradient(135deg, #EAF0FE 0%, #F6F8FC 100%);
+            background: linear-gradient(135deg, #F3F4F6 0%, #F3F4F6 100%);
             border: 1px solid {PALETTE["border"]};
             margin-bottom: 1.4rem;
         }}
@@ -251,7 +251,7 @@ def inject_style() -> None:
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
         section[data-testid="stSidebar"] [data-testid="stLogo"] {{
-            height: 76px !important;
+            height: 64px !important;
             max-height: none !important;
             width: auto !important;
             max-width: 100% !important;
@@ -281,7 +281,7 @@ def inject_style() -> None:
             border-top: 1px solid #22314F;
         }}
         section[data-testid="stSidebar"] * {{
-            color: #C7D2EC !important;
+            color: #E5E7EB !important;
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
             border-radius: 10px;
@@ -307,7 +307,7 @@ def inject_style() -> None:
             font-size: 27px !important;
             margin: 0 !important;
             padding: 0 !important;
-            color: #E4EAFB !important;
+            color: #E5E7EB !important;
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:last-child {{
             font-size: 18px !important;
@@ -922,6 +922,6 @@ with consensus_tab:
         )
 
 st.markdown(
-    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E5E7EB; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
     unsafe_allow_html=True,
 )

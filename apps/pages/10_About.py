@@ -56,7 +56,7 @@ st.set_page_config(
 
 if hasattr(st, "logo"):
     try:
-        st.logo(str(PROJECT_ROOT / "assets" / "filp_wordmark_white.svg"), size="large")
+        st.logo(str(PROJECT_ROOT / "assets" / "filp_sidebar_logo.png"), size="large")
     except Exception:
         pass
 
@@ -64,11 +64,11 @@ with st.sidebar:
     st.markdown(
         '<div style="margin-top:24px; padding:10px 10px; display:flex; align-items:center; '
         'gap:10px; border-top:1px solid #22314F;">'
-        '<div style="width:32px; height:32px; border-radius:50%; background:#3E63DE; color:#fff; '
+        '<div style="width:32px; height:32px; border-radius:50%; background:#1B2A4C; color:#fff; '
         'display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">Y</div>'
         '<div style="line-height:1.3;">'
         '<div style="font-weight:700; color:#FFFFFF; font-size:0.88rem;">Yasmine</div>'
-        '<div style="font-size:0.75rem; color:#AEB9D4;">PhD Candidate</div>'
+        '<div style="font-size:0.75rem; color:#C9CED8;">PhD Candidate</div>'
         '</div>'
         '</div>',
         unsafe_allow_html=True,
@@ -76,13 +76,13 @@ with st.sidebar:
 
 
 PALETTE = {
-    "bg_card": "#F6F8FC",
-    "border": "#E2E8F5",
+    "bg_card": "#F3F4F6",
+    "border": "#E5E7EB",
     "text_muted": "#5B6472",
     "text": "#1F2430",
-    "primary": "#5B7FDE",
-    "primary_soft": "#EAF0FE",
-    "neutral_soft": "#EEF1F6",
+    "primary": "#1B2A4C",
+    "primary_soft": "#F3F4F6",
+    "neutral_soft": "#F3F4F6",
 }
 
 
@@ -101,7 +101,7 @@ st.markdown(
         border-right: 1px solid #22314F;
     }}
     section[data-testid="stSidebar"] * {{
-        color: #AEB9D4 !important;
+        color: #C9CED8 !important;
     }}
     section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
         border-radius: 10px;
@@ -164,7 +164,7 @@ st.markdown(
         width: 100%;
         aspect-ratio: 1 / 1;
         border-radius: 20px;
-        background: linear-gradient(135deg, {PALETTE["primary"]}, #8fa8ea);
+        background: linear-gradient(135deg, {PALETTE["primary"]}, #C9CED8);
         color: white;
         display: flex;
         align-items: center;
@@ -258,7 +258,7 @@ with bio_column:
     st.write(RESEARCHER_BIO)
 
     st.markdown(
-        render_contact_pill(ICON_LINKEDIN, "LinkedIn", LINKEDIN_URL, "#0A66C2")
+        render_contact_pill(ICON_LINKEDIN, "LinkedIn", LINKEDIN_URL, "#1B2A4C")
         + render_contact_pill(ICON_EMAIL, "Email", f"mailto:{EMAIL_ADDRESS}", PALETTE["primary"])
         + render_contact_pill(ICON_GITHUB, "GitHub", GITHUB_URL, "#1F2430"),
         unsafe_allow_html=True,

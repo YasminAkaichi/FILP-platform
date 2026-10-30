@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS experiments (
     server_address TEXT NOT NULL,
 
     status TEXT NOT NULL,
-    error_message TEXT
+    error_message TEXT,
+
+    -- A centralized run launched "on the same data" as a consensus run
+    -- points to that consensus experiment (same dataset, seed, split).
+    reference_experiment_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS server_results (
@@ -137,7 +141,10 @@ CREATE TABLE IF NOT EXISTS benchmarks (
     server_address TEXT NOT NULL,
 
     status TEXT NOT NULL,
-    error_message TEXT
+    error_message TEXT,
+
+    -- Centralized baseline benchmark -> the consensus benchmark it mirrors.
+    reference_benchmark_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS hypothesis_log (
@@ -207,9 +214,17 @@ def _migrate_existing_tables(connection) -> None:
         # runs had no way to show what timeout was actually used.
         "experiments": {
             "timeout": "ALTER TABLE experiments ADD COLUMN timeout REAL",
+            "reference_experiment_id": (
+                "ALTER TABLE experiments "
+                "ADD COLUMN reference_experiment_id INTEGER"
+            ),
         },
         "benchmarks": {
             "timeout": "ALTER TABLE benchmarks ADD COLUMN timeout REAL",
+            "reference_benchmark_id": (
+                "ALTER TABLE benchmarks "
+                "ADD COLUMN reference_benchmark_id INTEGER"
+            ),
         },
     }
 

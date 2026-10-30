@@ -45,7 +45,11 @@ class Options(object):
     # dataset via `set(max_search_states, N).`; the default of 100
     # preserves prior behavior for existing datasets/options.
     max_search_states = 100
-    
+
+    # Wall-clock limit (seconds) for one whole induce() call; None = no limit.
+    # When it is reached, the clauses learned so far are returned.
+    time_limit = None
+
     logging = False
     
     def __init__(self, options=[]):

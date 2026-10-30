@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import time
 from pathlib import Path
 
 import flwr as fl
@@ -74,6 +75,10 @@ def main():
     # 2. Start Flower server
     # --------------------------------------------------------
 
+    # Wall-clock time of the whole federated exchange: waiting for the
+    # clients, their local learning, the vote, and the messages.
+    server_start = time.perf_counter()
+
     fl.server.start_server(
         server_address=args.server_address,
         config=fl.server.ServerConfig(
@@ -81,6 +86,8 @@ def main():
         ),
         strategy=strategy,
     )
+
+    federated_round_seconds = time.perf_counter() - server_start
 
     # --------------------------------------------------------
     # 3. Nothing to persist if no output directory is given
@@ -168,6 +175,31 @@ def main():
     logging.info(
         "Consensus vote traces written to %s",
         vote_traces_path,
+    )
+
+    # --------------------------------------------------------
+    # 6. Analysis: every H_i alone, MCC, vote margins, costs
+    # --------------------------------------------------------
+
+    from engines.consensus.analysis import analyse_vote_traces
+
+    analysis = analyse_vote_traces(strategy.vote_traces)
+    number_of_clients = len(strategy.hypotheses)
+    analysis["communication"] = {
+        "upload_bytes_per_client": strategy.upload_bytes,
+        "ensemble_bytes": strategy.ensemble_bytes,
+        "total_bytes": (
+            sum(strategy.upload_bytes.values())
+            + strategy.ensemble_bytes * number_of_clients
+        ),
+    }
+    analysis["induction_time_per_client"] = strategy.induction_times
+    analysis["federated_round_seconds"] = federated_round_seconds
+    analysis["local_coverage"] = strategy.local_coverage
+
+    (output_dir / "consensus_analysis.json").write_text(
+        json.dumps(analysis, indent=2, ensure_ascii=False),
+        encoding="utf-8",
     )
 
 

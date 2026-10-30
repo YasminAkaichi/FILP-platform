@@ -151,6 +151,16 @@ def evaluate_predictions(
         else 0.0
     )
 
+    # Matthews correlation coefficient: unlike accuracy/F1, it stays
+    # meaningful when the classes are unbalanced. 0 if undefined.
+    denominator = (
+        (tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)
+    ) ** 0.5
+    mcc = (
+        (tp * tn - fp * fn) / denominator
+        if denominator else 0.0
+    )
+
     return {
         "tp": tp,
         "tn": tn,
@@ -160,4 +170,5 @@ def evaluate_predictions(
         "precision": precision,
         "recall": recall,
         "f1": f1,
+        "mcc": mcc,
     }

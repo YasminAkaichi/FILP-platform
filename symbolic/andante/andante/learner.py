@@ -22,12 +22,13 @@ Isabelle Linden, Jean-Marie Jacquet and Wim Vanhoof.
 """
 
 import re
+import time
 import itertools
 from abc import ABC, abstractmethod
 from andante.options import Options, SystemParameters, ObjectWithTemporaryOptions
 from andante.knowledge import MultipleKnowledge, TreeShapedKnowledge
 from andante.logic_concepts import Clause, Constant, Variable, Function, Type
-from andante.substitution import Substitution
+from andante.substitution import Substitution, SubstitutionError
 import andante.hypothesis_metrics
 from andante.live_log import LiveLog
 from andante.collections import OrderedSet
@@ -72,7 +73,7 @@ class ProgolLearner(Learner):
         if self.options.logging:
             self.logs[-1].add_eventlog(event_name, value)
         
-    def build_bottom_i(self, e, M, B, solver):
+    def build_bottom_i(self, e, M, B, solver, type_aware_names=False):
         """ 
         For better understanding, read this function along Fig.1. 'Algorithm for constructing bottom' 
         in page 14 of document tutorial4.4.pdf 
@@ -171,6 +172,18 @@ class ProgolLearner(Learner):
         h = s.substitute(am)
         bottom.head = h
 
+        # Only used when type_aware_names=True (see induce()): variable
+        # names are then tracked for the WHOLE clause (head and every body
+        # literal), not literal by literal. Two different values that print
+        # to the same name but have different declared types (e.g. an atom
+        # of type `a` and a value of type `n`) must not share one variable
+        # in two literals, otherwise the clause gets a variable typed both
+        # +a and -n and building the hypothesis fails with "Substitution
+        # {+a/-n} is not valid" (seen on Alzheimer). It is a fallback and
+        # not the default, because it changes the bottom clause and slows
+        # the search on datasets that do not need it (Zendo: 18 s -> 89 s).
+        name_types = {vn: tn for (_, tn), vn in head_renames.items()}
+
         # 4. Modeb
         for i in range(self.options.i):
             next_InTerms = set()
@@ -213,6 +226,16 @@ class ProgolLearner(Learner):
                                     # (value, type) pair, so this literal
                                     # joins correctly with the head.
                                     var_name = head_renames[(t, tname)]
+                                elif type_aware_names:
+                                    base = t.to_variable_name()
+                                    if name_types.get(base, tname) != tname:
+                                        var_name = base + '_' + tname
+                                    else:
+                                        var_name = base
+                                    name_types[var_name] = tname
+                                    # Same (value, type) -> same name in
+                                    # every later literal of the clause.
+                                    head_renames[(t, tname)] = var_name
                                 else:
                                     base = t.to_variable_name()
                                     if base in seen_names_b and seen_names_b[base] != tname:
@@ -247,6 +270,8 @@ class ProgolLearner(Learner):
         Open = OrderedSet({s0})
         Closed = OrderedSet()
         for _ in range(self.options.max_search_states):
+            if self._timed_out():
+                return None
             s = hm.best(Open)
             Open.remove(s)
             Closed.add(s)
@@ -269,8 +294,13 @@ class ProgolLearner(Learner):
             if not Open:
                 return None            
             
+    def _timed_out(self):
+        """ True once the wall-clock limit (options.time_limit) is exceeded """
+        deadline = getattr(self, '_deadline', None)
+        return deadline is not None and time.time() > deadline
+
     def induce(self, examples, modes, knowledge, solver, **temp_options):
-        """ Main algorithm of the learning process 
+        """ Main algorithm of the learning process
 
         This is the implementation of the cover set algorithm. This is the
         function called first when learning new clauses.
@@ -288,7 +318,9 @@ class ProgolLearner(Learner):
             The deduction engine
         """
         self.add_temporary_options(**temp_options)
-        
+        time_limit = self.options.time_limit
+        self._deadline = (time.time() + time_limit) if time_limit else None
+
         log_options = self.options.copy()
         self.add_temporary_options(verbose=0)
         self.add_log()
@@ -301,7 +333,7 @@ class ProgolLearner(Learner):
         nclause = 0
         learned_knowledge = TreeShapedKnowledge(options=knowledge.options)
         whole_knowledge = MultipleKnowledge(knowledge, learned_knowledge)
-        while examples['pos'] and nclause<SystemParameters.maxclauses:            
+        while examples['pos'] and nclause<SystemParameters.maxclauses and not self._timed_out():
             # Select 1 example
             e1 = examples['pos'][0]
             
@@ -318,7 +350,15 @@ class ProgolLearner(Learner):
             
             # Build hypothesis
             self.beg_child('States')
-            C = self.build_hypothesis(examples, modes, bottom_i, whole_knowledge, solver)
+            try:
+                C = self.build_hypothesis(examples, modes, bottom_i, whole_knowledge, solver)
+            except SubstitutionError:
+                # The bottom clause gave one variable two different types:
+                # build it again with clause-wide, type-aware variable names.
+                bottom_i = self.build_bottom_i(e1, modes, whole_knowledge, solver, type_aware_names=True)
+                if SystemParameters.generic_name_for_variable:
+                    bottom_i = Substitution.generic_name_for_variables(bottom_i)
+                C = self.build_hypothesis(examples, modes, bottom_i, whole_knowledge, solver)
             self.end_child()
             self.add_eventlog('Clause', C)
             
@@ -327,7 +367,15 @@ class ProgolLearner(Learner):
                 learned_knowledge.add(C)
             examples = {'pos':[e for e in examples['pos'] if not solver.succeeds_on(e.head, whole_knowledge, verbose=0)],
                         'neg':examples['neg']}
-            
+            # No consistent clause was found for e1: it stays uncovered, and
+            # would be picked again as the first example at every iteration,
+            # repeating the same full search until SystemParameters.maxclauses
+            # (100). It is set aside once, as Progol does for an example it
+            # cannot generalise.
+            if C is None:
+                examples = {'pos':[e for e in examples['pos'] if e is not e1],
+                            'neg':examples['neg']}
+
             nclause += 1
             self.verboseprint('')
             self.end_child()

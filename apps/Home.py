@@ -46,14 +46,14 @@ st.markdown(
         border-right: 1px solid #22314F;
     }
     section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {
-        height: auto !important;
-        min-height: 0 !important;
+        height: 80px !important;
+        min-height: 80px !important;
         margin-bottom: 4px !important;
         padding-top: 6px !important;
     }
     section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
     section[data-testid="stSidebar"] [data-testid="stLogo"] {
-        height: 76px !important;
+        height: 64px !important;
         max-height: none !important;
         width: auto !important;
         max-width: 100% !important;
@@ -83,7 +83,7 @@ st.markdown(
         border-top: 1px solid #22314F;
     }
     section[data-testid="stSidebar"] * {
-        color: #C7D2EC !important;
+        color: #E5E7EB !important;
     }
     section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {
         border-radius: 10px;
@@ -109,7 +109,7 @@ st.markdown(
         font-size: 27px !important;
         margin: 0 !important;
         padding: 0 !important;
-        color: #E4EAFB !important;
+        color: #E5E7EB !important;
     }
     section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:last-child {
         font-size: 18px !important;

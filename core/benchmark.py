@@ -17,6 +17,8 @@ class BenchmarkConfig:
     timeout: int = 600
     timing_mode: str = "wall"
     server_address: str = "localhost:8080"
+    # Centralized baseline of a consensus benchmark: id of that benchmark.
+    reference_benchmark_id: int | None = None
 
     def validate(self) -> None:
         if not self.name.strip():

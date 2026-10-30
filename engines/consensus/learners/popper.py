@@ -87,21 +87,31 @@ class PopperConsensusLearner:
             python_paths
         )
 
-        process = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "engines.consensus.learners.popper_trainer",
-                "--dataset",
-                str(self.dataset_path),
-                "--timeout",
-                str(self.timeout),
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
+        try:
+            process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "engines.consensus.learners.popper_trainer",
+                    "--dataset",
+                    str(self.dataset_path),
+                    "--timeout",
+                    str(self.timeout),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env,
+            )
+        except subprocess.CalledProcessError as error:
+            # The real cause (Popper's traceback) is in the captured stderr,
+            # which CalledProcessError does not show by itself.
+            raise RuntimeError(
+                f"Popper failed on {self.dataset_path} "
+                f"(exit code {error.returncode}).\n"
+                f"--- stderr (tail) ---\n{(error.stderr or '')[-3000:]}\n"
+                f"--- stdout (tail) ---\n{(error.stdout or '')[-1000:]}"
+            ) from error
 
         # Popper logs may be written to stderr.
         if process.stderr:
@@ -111,9 +121,27 @@ class PopperConsensusLearner:
                 end="",
             )
 
-        result = json.loads(
-            process.stdout.strip()
-        )
+        # The trainer prints its JSON result as the last line of stdout.
+        # Anything printed before it (progress, Prolog output) is ignored.
+        result = None
+
+        for line in reversed(process.stdout.strip().splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                result = json.loads(line)
+                break
+            except json.JSONDecodeError:
+                continue
+
+        if result is None:
+            raise RuntimeError(
+                "Popper did not return a result for "
+                f"{self.dataset_path}.\n"
+                f"stdout (tail): {process.stdout[-1500:]!r}\n"
+                f"stderr (tail): {process.stderr[-1500:]!r}"
+            )
 
         hypothesis = result.get(
             "hypothesis",
@@ -135,6 +163,15 @@ class PopperConsensusLearner:
         hypothesis: list[str],
         test_dataset: str | Path,
     ) -> dict[str, bool]:
+        return self.predict_with_rules(hypothesis, test_dataset)[0]
+
+    def predict_with_rules(
+        self,
+        hypothesis: list[str],
+        test_dataset: str | Path,
+    ) -> tuple[dict[str, bool], dict[str, list[int]]]:
+        """Predictions plus, per example, the 1-based indexes of the rules
+        of `hypothesis` that cover it."""
 
         test_dataset = Path(
             test_dataset
@@ -165,21 +202,31 @@ class PopperConsensusLearner:
 
             env = os.environ.copy()
 
-            process = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "engines.consensus.learners.popper_predictor",
-                    "--test-dataset",
-                    str(test_dataset),
-                    "--hypothesis-file",
-                    hypothesis_file,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env,
-            )
+            try:
+                process = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "engines.consensus.learners.popper_predictor",
+                        "--test-dataset",
+                        str(test_dataset),
+                        "--hypothesis-file",
+                        hypothesis_file,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env=env,
+                )
+            except subprocess.CalledProcessError as error:
+                # Show the real cause (Prolog / Python error) instead of
+                # just the exit status.
+                raise RuntimeError(
+                    f"Popper prediction failed on {test_dataset} "
+                    f"(exit code {error.returncode}).\n"
+                    f"--- stderr (tail) ---\n{(error.stderr or '')[-3000:]}\n"
+                    f"--- stdout (tail) ---\n{(error.stdout or '')[-1000:]}"
+                ) from error
 
             if process.stderr:
                 print(
@@ -188,15 +235,35 @@ class PopperConsensusLearner:
                     end="",
                 )
 
-            predictions = json.loads(
-                process.stdout.strip()
-            )
+            # The JSON result is the last line of stdout; anything printed
+            # before it is ignored.
+            output = None
+            for line in reversed(process.stdout.strip().splitlines()):
+                try:
+                    output = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    continue
 
-            return {
+            if output is None:
+                raise RuntimeError(
+                    "Popper prediction returned no result.\n"
+                    f"stdout (tail): {process.stdout[-1500:]!r}\n"
+                    f"stderr (tail): {process.stderr[-1500:]!r}"
+                )
+
+            predictions = {
                 example_id: bool(prediction)
                 for example_id, prediction
-                in predictions.items()
+                in output["predictions"].items()
             }
+            fired = {
+                example_id: [int(i) for i in indexes]
+                for example_id, indexes
+                in output["fired"].items()
+            }
+
+            return predictions, fired
 
         finally:
 

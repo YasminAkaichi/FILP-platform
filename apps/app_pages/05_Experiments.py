@@ -24,6 +24,14 @@ from core.benchmark_results import (
     load_consensus_benchmark_runs,
 )
 from database.connection import get_connection
+from database.schema import initialize_database
+
+initialize_database()  # applies pending column migrations
+from core.background_run import BackgroundRun
+from core.benchmark import BenchmarkConfig
+from core.benchmark_launcher import BenchmarkLauncher
+from core.port_utils import find_free_port
+from apps.run_monitor import render_run_monitor
 
 
 # ---------------------------------------------------------------------
@@ -38,7 +46,7 @@ st.set_page_config(
 
 if hasattr(st, "logo"):
     try:
-        st.logo(str(PROJECT_ROOT / "assets" / "filp_wordmark_white.svg"), size="large")
+        st.logo(str(PROJECT_ROOT / "assets" / "filp_sidebar_logo.png"), size="large")
     except Exception:
         pass
 
@@ -54,29 +62,29 @@ if hasattr(st, "logo"):
 # the rest of the page only ever refers to a name, not a hex code.
 
 PALETTE = {
-    "bg_card": "#F6F8FC",
-    "border": "#E2E8F5",
+    "bg_card": "#F3F4F6",
+    "border": "#E5E7EB",
     "text_muted": "#5B6472",
     "text": "#1F2430",
-    "primary": "#3E63DE",
-    "primary_soft": "#EAF0FE",
-    "success": "#2F9E63",
-    "success_soft": "#E7F6EE",
-    "warning": "#C98A1F",
-    "warning_soft": "#FCF1DE",
-    "error": "#D1554B",
-    "error_soft": "#FBEAE8",
+    "primary": "#1B2A4C",
+    "primary_soft": "#F3F4F6",
+    "success": "#1B2A4C",
+    "success_soft": "#E5E7EB",
+    "warning": "#1B2A4C",
+    "warning_soft": "#E5E7EB",
+    "error": "#1B2A4C",
+    "error_soft": "#F3F4F6",
     "neutral": "#8A93A3",
-    "neutral_soft": "#EEF1F6",
+    "neutral_soft": "#F3F4F6",
     # Dark sidebar
     "sidebar_bg": "#0F1B33",
-    "sidebar_text": "#C7D2EC",
-    "sidebar_text_muted": "#7C87A6",
+    "sidebar_text": "#E5E7EB",
+    "sidebar_text_muted": "#1B2A4C",
     "sidebar_active_bg": "#1B2A4C",
     "sidebar_border": "#22314F",
 }
 
-CHART_COLORS = ["#3E63DE", "#7FB88F", "#E8A85C", "#C97BB0", "#6BB6C9", "#B99BD8"]
+CHART_COLORS = ["#1B2A4C", "#1B2A4C", "#C9CED8", "#C9CED8", "#1B2A4C", "#C9CED8"]
 
 STATUS_STYLE = {
     "completed": (PALETTE["success"], PALETTE["success_soft"], "✓"),
@@ -91,10 +99,11 @@ STATUS_STYLE = {
 }
 
 METHOD_STYLE = {
-    "consensus": ("#7C5CFC", "#EFEAFE", "Consensus"),
-    "collaboration": ("#3E7BFA", "#E8F0FE", "Collaboration"),
-    "coordination": ("#E08A2B", "#FCEEDD", "Coordination"),
-    "mdl_federation": ("#2A9D8F", "#E3F5F3", "MDL Federation"),
+    "consensus": ("#C9CED8", "#F3F4F6", "Consensus"),
+    "collaboration": ("#1B2A4C", "#F3F4F6", "Collaboration"),
+    "coordination": ("#1B2A4C", "#E5E7EB", "Coordination"),
+    "mdl_federation": ("#1B2A4C", "#E5E7EB", "MDL Federation"),
+    "centralized": ("#1B2A4C", "#E5E7EB", "Centralized"),
 }
 
 
@@ -285,7 +294,7 @@ def inject_style() -> None:
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
         section[data-testid="stSidebar"] [data-testid="stLogo"] {{
-            height: 76px !important;
+            height: 64px !important;
             max-height: none !important;
             width: auto !important;
             max-width: 100% !important;
@@ -341,7 +350,7 @@ def inject_style() -> None:
             font-size: 27px !important;
             margin: 0 !important;
             padding: 0 !important;
-            color: #E4EAFB !important;
+            color: #E5E7EB !important;
         }}
         section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a > span:last-child {{
             font-size: 18px !important;
@@ -549,7 +558,8 @@ def load_benchmark_metadata(benchmark_id: int) -> dict:
                 learner,
                 rounds,
                 timeout,
-                status
+                status,
+                reference_benchmark_id
             FROM benchmarks
             WHERE id = ?
             """,
@@ -643,6 +653,7 @@ def load_all_benchmarks(limit: int = 500) -> list[dict]:
                 number_of_clients,
                 partition_strategy,
                 number_of_runs,
+                learner,
                 status
             FROM benchmarks
             ORDER BY id DESC
@@ -972,7 +983,21 @@ if (
             with row_columns[0]:
                 st.markdown(f"**#{benchmark['id']}**")
             with row_columns[1]:
-                st.write(benchmark.get("name") or "—")
+                display_name = benchmark.get("name") or "—"
+                # Consensus runs: show which local learner was used
+                # (e.g. zendo1_consensus_k3_iid -> zendo1_consensus_andante_k3_iid).
+                if benchmark.get("approach") == "consensus":
+                    learner_label = str(benchmark.get("learner") or "popper").lower()
+                    if learner_label not in display_name.lower():
+                        if "_consensus_" in display_name:
+                            display_name = display_name.replace(
+                                "_consensus_",
+                                f"_consensus_{learner_label}_",
+                                1,
+                            )
+                        else:
+                            display_name = f"{display_name} ({learner_label})"
+                st.write(display_name)
             with row_columns[2]:
                 st.markdown(render_method_badge(benchmark["approach"]), unsafe_allow_html=True)
             with row_columns[3]:
@@ -998,32 +1023,65 @@ if (
                     st.session_state["pending_delete_benchmark_id"] = benchmark["id"]
                     st.rerun()
 
-        st.write("")
-        st.caption(
-            f"Showing {len(page_rows)} of {len(filtered_benchmarks)} experiments"
+        st.markdown(
+            f'<div style="margin-top:-1.4rem; font-size:0.85rem; '
+            f'color:{PALETTE["text_muted"]};">'
+            f"Showing {len(page_rows)} of {len(filtered_benchmarks)} experiments</div>",
+            unsafe_allow_html=True,
         )
 
         if total_pages > 1:
-            pagination_columns = st.columns([0.4] + [0.42] * total_pages + [0.4] + [4])
+            # Compact, frameless page numbers: first, last and a window around
+            # the current page ("…" for the gaps), so numbers never stack.
+            shown = sorted(
+                {1, total_pages}
+                | set(range(max(1, current_page - 2), min(total_pages, current_page + 2) + 1))
+            )
+            items: list = []
+            for number in shown:
+                if items and number - items[-1] > 1:
+                    items.append("…")
+                items.append(number)
+
+            # Every item is the same kind of button, so they line up; the
+            # current page is highlighted with CSS on its widget key.
+            st.markdown(
+                f"""
+                <style>
+                div[data-testid="stHorizontalBlock"]:has(.st-key-page_prev) {{
+                    margin-top: -1.6rem;
+                }}
+                .st-key-page_{current_page} button {{
+                    background: {PALETTE["text"]} !important;
+                    border-radius: 8px !important;
+                }}
+                .st-key-page_{current_page} button p {{
+                    color: #FFFFFF !important;
+                }}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            pagination_columns = st.columns(
+                [1] * (len(items) + 2) + [12], gap="small"
+            )
 
             with pagination_columns[0]:
-                if st.button("◀", disabled=(current_page <= 1), key="page_prev"):
+                if st.button("‹", disabled=(current_page <= 1), key="page_prev", type="tertiary"):
                     st.session_state["experiments_page"] = current_page - 1
                     st.rerun()
 
-            for offset, page_number in enumerate(range(1, total_pages + 1), start=1):
+            for offset, item in enumerate(items, start=1):
                 with pagination_columns[offset]:
-                    if st.button(
-                        str(page_number),
-                        key=f"page_{page_number}",
-                        type="primary" if page_number == current_page else "secondary",
-                        use_container_width=True,
-                    ):
-                        st.session_state["experiments_page"] = page_number
+                    if item == "…":
+                        st.button("…", disabled=True, key=f"page_gap_{offset}", type="tertiary")
+                    elif st.button(str(item), key=f"page_{item}", type="tertiary"):
+                        st.session_state["experiments_page"] = item
                         st.rerun()
 
-            with pagination_columns[total_pages + 1]:
-                if st.button("▶", disabled=(current_page >= total_pages), key="page_next"):
+            with pagination_columns[len(items) + 1]:
+                if st.button("›", disabled=(current_page >= total_pages), key="page_next", type="tertiary"):
                     st.session_state["experiments_page"] = current_page + 1
                     st.rerun()
 
@@ -1033,6 +1091,95 @@ if (
 # =======================================================================
 # DETAIL VIEW
 # =======================================================================
+
+def render_centralized_baseline_block(consensus: dict) -> None:
+    """Launch (or show) the centralized run on the SAME data as a consensus
+    experiment, recorded as its own experiment with method "centralized"."""
+    with get_connection() as connection:
+        baselines = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT id, status FROM benchmarks WHERE reference_benchmark_id = ? "
+                "ORDER BY id DESC",
+                (consensus["id"],),
+            ).fetchall()
+        ]
+
+    bg = st.session_state.get(f"_baseline_bg_{consensus['id']}")
+
+    with st.container(border=True):
+        st.markdown(
+            '<div class="section-title">Centralized baseline on the same data</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="section-caption">'
+            "Runs the same learner once on the whole training set (no clients, no "
+            "federation) and scores it on this experiment's test set, for each of "
+            f"its {consensus['number_of_runs']} run(s) and seeds. It is saved as its own "
+            "experiment, method “centralized”, linked to this one."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        if bg is not None and not bg.done:
+            render_run_monitor(
+                bg,
+                key=f"baseline_{consensus['id']}",
+                title="Running the centralized baseline…",
+            )
+            st.stop()
+
+        if bg is not None and bg.done:
+            st.session_state.pop(f"_baseline_bg_{consensus['id']}", None)
+            if bg.error is not None:
+                st.error(f"The centralized run failed: {bg.error}")
+            elif bg.stopped_without_result:
+                st.warning("The centralized run was stopped before any result.")
+            else:
+                st.success(f"Centralized baseline saved as experiment #{bg.result}.")
+            baselines = [{"id": bg.result, "status": "COMPLETED"}] + [
+                b for b in baselines if b["id"] != bg.result
+            ] if bg.result else baselines
+
+        for baseline in baselines:
+            columns = st.columns([4, 1])
+            columns[0].markdown(
+                f"Experiment #{baseline['id']} · {render_badge(baseline['status'])}",
+                unsafe_allow_html=True,
+            )
+            if columns[1].button("Open", key=f"open_baseline_{baseline['id']}"):
+                st.session_state["selected_benchmark_id"] = baseline["id"]
+                st.session_state["experiments_view"] = "detail"
+                st.rerun()
+
+        label = (
+            "Run it again"
+            if baselines
+            else "Run centralized on the same data"
+        )
+        if st.button(label, key=f"run_baseline_{consensus['id']}", type="primary"):
+            config = BenchmarkConfig(
+                name=f"Centralized baseline of #{consensus['id']} · {consensus['name']}",
+                approach="centralized",
+                dataset=consensus["dataset"],
+                number_of_clients=1,
+                partition_strategy="iid",
+                number_of_runs=int(consensus["number_of_runs"]),
+                base_seed=int(consensus["base_seed"]),
+                learner=consensus.get("learner") or "popper",
+                rounds=int(consensus.get("rounds") or 35000),
+                timeout=int(consensus.get("timeout") or 600),
+                server_address=f"localhost:{find_free_port()}",
+                reference_benchmark_id=int(consensus["id"]),
+            )
+            st.session_state[f"_baseline_bg_{consensus['id']}"] = BackgroundRun(
+                lambda control, _config=config: BenchmarkLauncher().run(
+                    _config, control=control
+                )
+            )
+            st.rerun()
+
 
 selected_benchmark_id = st.session_state["selected_benchmark_id"]
 
@@ -1063,9 +1210,14 @@ with header_left:
         st.session_state["experiments_view"] = "list"
         st.rerun()
 
+    page_title = (
+        f"Centralized baseline of experiment #{metadata['reference_benchmark_id']}"
+        if metadata["approach"] == "centralized" and metadata.get("reference_benchmark_id")
+        else f"Learning by {approach_label}"
+    )
     st.markdown(
         f'<div style="font-size:2rem; font-weight:750; color:{PALETTE["text"]}; '
-        f'line-height:1.25;">Learning by {approach_label}</div>'
+        f'line-height:1.25;">{page_title}</div>'
         f'<div style="font-size:1.1rem; font-weight:600; color:{PALETTE["text_muted"]}; '
         f'margin:4px 0 2px 0;">'
         f'Experiment #{metadata["id"]}'
@@ -1146,6 +1298,24 @@ else:
 # --- Overview tab ------------------------------------------------------
 
 with tab_overview:
+    if metadata["approach"] == "centralized" and metadata.get("reference_benchmark_id"):
+        with st.container(border=True):
+            st.markdown(
+                "This run is the **centralized baseline** of consensus experiment "
+                f"#{metadata['reference_benchmark_id']}: the same learner, run once on the "
+                "whole training set, scored on the same test set (same dataset and seeds)."
+            )
+            if st.button(
+                f"Open consensus experiment #{metadata['reference_benchmark_id']}",
+                key="open_reference_consensus",
+            ):
+                st.session_state["selected_benchmark_id"] = metadata["reference_benchmark_id"]
+                st.session_state["experiments_view"] = "detail"
+                st.rerun()
+
+    if metadata["approach"] == "consensus":
+        render_centralized_baseline_block(metadata)
+
     if metadata["approach"] == "consensus":
         with st.container(border=True):
             st.markdown(
@@ -1188,6 +1358,151 @@ with tab_overview:
                     "perfectly (FP = FN = 0, as in most small benchmarks "
                     "here), all four collapse to **1.00** — that's expected, "
                     "not a bug."
+                )
+
+        # Each hypothesis alone vs. the majority vote, on the same shared
+        # test set (from consensus_analysis.json, averaged over the runs).
+        per_hypothesis_rows: dict[str, list[dict]] = {}
+        analysis_runs = 0
+        for run in runs or []:
+            analysis_file = (
+                PROJECT_ROOT
+                / "artifacts"
+                / f"experiment_{run['experiment_id']}"
+                / "consensus"
+                / "consensus_analysis.json"
+            )
+            if not analysis_file.is_file():
+                continue
+            try:
+                analysis = json.loads(analysis_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not analysis.get("consensus"):
+                continue
+            analysis_runs += 1
+            per_hypothesis_rows.setdefault("Consensus (majority vote)", []).append(analysis["consensus"])
+            for name, values in analysis.get("per_hypothesis", {}).items():
+                per_hypothesis_rows.setdefault(f"{name} alone", []).append(values)
+
+        if per_hypothesis_rows:
+            with st.container(border=True):
+                st.markdown(
+                    '<div class="section-title">Each hypothesis alone vs. the consensus</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<div class="section-caption">'
+                    "Every hypothesis H1, H2, ... evaluated alone on the same "
+                    "shared test set, next to the majority vote"
+                    + (f" (mean over {analysis_runs} runs)" if analysis_runs > 1 else "")
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+
+                def _mean(items: list[dict], key: str) -> float:
+                    return sum(item[key] for item in items) / len(items)
+
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Model": label,
+                                "Accuracy": _mean(items, "accuracy"),
+                                "Precision": _mean(items, "precision"),
+                                "Recall": _mean(items, "recall"),
+                                "F1": _mean(items, "f1"),
+                                "MCC": _mean(items, "mcc"),
+                            }
+                            for label, items in per_hypothesis_rows.items()
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        name: st.column_config.NumberColumn(format="%.3f")
+                        for name in ("Accuracy", "Precision", "Recall", "F1", "MCC")
+                    },
+                )
+                st.caption(
+                    "The accuracy shown at the top is the first row: the "
+                    "result of the vote, not of one particular hypothesis or "
+                    "client. MCC (−1 to +1) stays reliable when positives and "
+                    "negatives are unbalanced."
+                )
+
+        # Cost of the run: learning time of every client and the size of the
+        # messages (from consensus_analysis.json, averaged over the runs).
+        slowest_times: list[float] = []
+        mean_times: list[float] = []
+        upload_totals: list[float] = []
+        ensemble_sizes: list[float] = []
+        round_times: list[float] = []
+        for run in runs or []:
+            cost_file = (
+                PROJECT_ROOT
+                / "artifacts"
+                / f"experiment_{run['experiment_id']}"
+                / "consensus"
+                / "consensus_analysis.json"
+            )
+            if not cost_file.is_file():
+                continue
+            try:
+                cost = json.loads(cost_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            times = [
+                float(value)
+                for value in (cost.get("induction_time_per_client") or {}).values()
+            ]
+            if times:
+                slowest_times.append(max(times))
+                mean_times.append(sum(times) / len(times))
+            if cost.get("federated_round_seconds") is not None:
+                round_times.append(float(cost["federated_round_seconds"]))
+            communication = cost.get("communication") or {}
+            if communication:
+                upload_totals.append(
+                    float(sum((communication.get("upload_bytes_per_client") or {}).values()))
+                )
+                ensemble_sizes.append(float(communication.get("ensemble_bytes", 0.0)))
+
+        if slowest_times:
+            with st.container(border=True):
+                st.markdown(
+                    '<div class="section-title">Cost of the consensus run</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<div class="section-caption">'
+                    "Clients learn in parallel, so the learning time of the run "
+                    "is the slowest client"
+                    + (f" (mean over {len(slowest_times)} runs)" if len(slowest_times) > 1 else "")
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+                cost_columns = st.columns(5 if round_times else 4)
+                if round_times:
+                    cost_columns[4].metric(
+                        "Total run time",
+                        f"{sum(round_times) / len(round_times):.1f} s",
+                    )
+                cost_columns[0].metric(
+                    "Learning time (slowest client)",
+                    f"{sum(slowest_times) / len(slowest_times):.1f} s",
+                )
+                cost_columns[1].metric(
+                    "Learning time (mean per client)",
+                    f"{sum(mean_times) / len(mean_times):.1f} s",
+                )
+                cost_columns[2].metric(
+                    "Hypotheses sent to the server",
+                    f"{sum(upload_totals) / max(len(upload_totals), 1) / 1024:.1f} KB",
+                )
+                cost_columns[3].metric(
+                    "Ensemble sent back to each client",
+                    f"{sum(ensemble_sizes) / max(len(ensemble_sizes), 1) / 1024:.1f} KB",
                 )
 
         st.write("")
@@ -1773,6 +2088,14 @@ if tab_predictions is not None:
                                         render_vote_badge(vote["prediction"] == "POS"),
                                         unsafe_allow_html=True,
                                     )
+                                # Which rules of this hypothesis cover the
+                                # example (absent in runs made before the
+                                # rule-level traceability was added).
+                                for rule_index, rule_text in zip(
+                                    vote.get("rules_fired", []),
+                                    vote.get("rules_text", []),
+                                ):
+                                    st.code(f"rule {rule_index}: {rule_text}", language="prolog")
 
                             st.write("")
                             st.caption(
@@ -1794,6 +2117,123 @@ with tab_clients:
             "client's hypothesis and vote, and **Dataset** for their local "
             "data."
         )
+
+        # Coverage of every hypothesis H_i on each client's own training data.
+        if runs:
+            if len(runs) > 1:
+                coverage_run_number = st.selectbox(
+                    "Run",
+                    options=[r["run_number"] for r in runs],
+                    format_func=lambda n: f"Run {n}",
+                    key="consensus_coverage_run_picker",
+                )
+                coverage_row = next(r for r in runs if r["run_number"] == coverage_run_number)
+            else:
+                coverage_row = runs[0]
+
+            analysis_path = (
+                PROJECT_ROOT
+                / "artifacts"
+                / f"experiment_{coverage_row['experiment_id']}"
+                / "consensus"
+                / "consensus_analysis.json"
+            )
+
+            local_coverage = {}
+            client_times: dict = {}
+            client_uploads: dict = {}
+            if analysis_path.is_file():
+                try:
+                    client_analysis = json.loads(
+                        analysis_path.read_text(encoding="utf-8")
+                    )
+                    local_coverage = client_analysis.get("local_coverage", {})
+                    client_times = client_analysis.get("induction_time_per_client", {}) or {}
+                    client_uploads = (
+                        (client_analysis.get("communication") or {}).get("upload_bytes_per_client", {})
+                        or {}
+                    )
+                except (OSError, json.JSONDecodeError):
+                    local_coverage = {}
+
+            if client_times:
+                with st.container(border=True):
+                    st.markdown(
+                        '<div class="section-title">Learning time per client</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(
+                        "Time each client spent learning its local hypothesis. "
+                        "A client that reached the timeout is shown with a time "
+                        "close to the limit (its hypothesis may be empty)."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Client": client_id,
+                                    "Learning time (s)": float(client_times[client_id]),
+                                    "Hypothesis sent (KB)": float(client_uploads.get(client_id, 0.0)) / 1024,
+                                }
+                                for client_id in sorted(
+                                    client_times,
+                                    key=lambda c: int(c) if str(c).isdigit() else 0,
+                                )
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Learning time (s)": st.column_config.NumberColumn(format="%.1f"),
+                            "Hypothesis sent (KB)": st.column_config.NumberColumn(format="%.2f"),
+                        },
+                    )
+
+            if not local_coverage:
+                st.info(
+                    "Hypothesis coverage per client is not available for "
+                    "this run (it is recorded by runs made with the latest "
+                    "version)."
+                )
+            else:
+                coverage_table = []
+                for client_id in sorted(local_coverage, key=lambda c: int(c) if str(c).isdigit() else 0):
+                    for item in local_coverage[client_id]:
+                        positives = item["tp"] + item["fn"]
+                        negatives = item["tn"] + item["fp"]
+                        coverage_table.append(
+                            {
+                                "Client": client_id,
+                                "Hypothesis": item["hypothesis"],
+                                "Positives covered": f"{item['tp']} / {positives}",
+                                "Negatives covered": f"{item['fp']} / {negatives}",
+                                "Accuracy": (
+                                    (item["tp"] + item["tn"]) / (positives + negatives)
+                                    if (positives + negatives)
+                                    else 0.0
+                                ),
+                            }
+                        )
+
+                with st.container(border=True):
+                    st.markdown(
+                        '<div class="section-title">Hypothesis coverage per client</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(
+                        "Each hypothesis H1, H2, ... evaluated on every "
+                        "client's own training data. A client's own "
+                        "hypothesis should fit its data best; the others "
+                        "show how much the clients' data differ."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(coverage_table),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Accuracy": st.column_config.NumberColumn(format="%.3f"),
+                        },
+                    )
     elif not client_results:
         st.info("No client-level results are available for this benchmark.")
     else:
@@ -2027,6 +2467,6 @@ with tab_dataset:
 
 
 st.markdown(
-    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E2E8F5; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
+    '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E5E7EB; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
     unsafe_allow_html=True,
 )
