@@ -714,6 +714,18 @@ elif current_step == 2:
                         "hypothesis found so far (by score) is returned."
                     ),
                 )
+                if method in ("coordination", "collaboration"):
+                    st.session_state["wizard_hybrid"] = st.checkbox(
+                        "Hybrid evaluation (federated learning + centralized testing)",
+                        value=st.session_state.get("wizard_hybrid", True),
+                        help=(
+                            "Besides the federated search, runs the same search a second "
+                            "time where ONE client holding the whole dataset tests the "
+                            "programs (centralized testing, Bach4Popper Section 5.1). Saved "
+                            "as a separate benchmark; learning, Popper core and client "
+                            "evaluation times are compared in Analytics. Doubles the run time."
+                        ),
+                    )
             else:
                 st.session_state["wizard_rounds"] = st.number_input(
                     "Maximum rounds",
@@ -861,6 +873,10 @@ elif current_step == 4:
                 rounds=int(st.session_state["wizard_rounds"]),
                 timeout=int(st.session_state["wizard_timeout"]),
                 server_address=f"localhost:{server_port}",
+                centralized_testing=bool(
+                    method in ("coordination", "collaboration")
+                    and st.session_state.get("wizard_hybrid", True)
+                ),
             )
 
             # The experiment runs in a background thread so the page stays

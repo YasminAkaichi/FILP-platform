@@ -19,6 +19,13 @@ class BenchmarkConfig:
     server_address: str = "localhost:8080"
     # Centralized baseline of a consensus benchmark: id of that benchmark.
     reference_benchmark_id: int | None = None
+    # Coordination only: hybrid evaluation protocol of the Bach4Popper paper.
+    # Besides the federated search (clients 1..K, aggregated outcome), run a
+    # second, complete search of the same dataset where ONE client holding
+    # the whole dataset tests the programs (centralized testing). It is saved
+    # as a separate benchmark, "Centralized testing, whole <dataset> · same
+    # seed as #<id>".
+    centralized_testing: bool = False
 
     def validate(self) -> None:
         if not self.name.strip():

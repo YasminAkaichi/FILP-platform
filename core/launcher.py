@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import os
 from core.results import ClientResult, ServerResult, ConsensusResult
 import socket
 import subprocess
@@ -18,6 +19,23 @@ from core.run_control import RunControl, RunStopped
 import json
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Popper's own evaluation time limit per example is 0.001 s: on a busy machine
+# an example can exceed it by chance and be counted as "not covered", which
+# makes the search take a different path from one run to the next. The
+# federated approaches (Collaboration, Coordination) run several Prolog
+# processes at once, so they use a safer limit. Override with the environment
+# variable FILP_EVAL_TIMEOUT. PYTHONHASHSEED is fixed so that the order of
+# Python sets and dictionaries (hence the order of the constraints given to
+# the solver) is the same in every run.
+FEDERATED_EVAL_TIMEOUT = "0.1"
+
+
+def search_environment() -> dict:
+    environment = os.environ.copy()
+    environment["PYTHONHASHSEED"] = "0"
+    environment.setdefault("FILP_EVAL_TIMEOUT", FEDERATED_EVAL_TIMEOUT)
+    return environment
 DATASETS_DIR = PROJECT_ROOT / "datasets"
 
 
@@ -241,6 +259,7 @@ class ExperimentLauncher:
             server_process = subprocess.Popen(
                 server_command,
                 cwd=PROJECT_ROOT,
+                env=search_environment(),
             )
 
             processes.append(server_process)
@@ -281,6 +300,7 @@ class ExperimentLauncher:
                 client_process = subprocess.Popen(
                     client_command,
                     cwd=PROJECT_ROOT,
+                    env=search_environment(),
                 )
 
                 processes.append(client_process)
@@ -1110,6 +1130,7 @@ class ExperimentLauncher:
             server_process = subprocess.Popen(
                 server_command,
                 cwd=PROJECT_ROOT,
+                env=search_environment(),
             )
 
             processes.append(
@@ -1160,6 +1181,7 @@ class ExperimentLauncher:
                 client_process = subprocess.Popen(
                     client_command,
                     cwd=PROJECT_ROOT,
+                    env=search_environment(),
                 )
 
                 processes.append(
@@ -1388,6 +1410,20 @@ class ExperimentLauncher:
                 repository.save_client_result(
                     experiment_id=experiment_id,
                     result=client_result,
+                )
+
+            # Every program tested, in order, with its outcome and score:
+            # lets two searches be compared round by round.
+            coordination_log_path = (
+                experiment_directory / "hypothesis_log.json"
+            )
+
+            if coordination_log_path.is_file():
+                repository.save_hypothesis_log(
+                    experiment_id=experiment_id,
+                    entries=json.loads(
+                        coordination_log_path.read_text(encoding="utf-8")
+                    ),
                 )
 
         except KeyboardInterrupt:
@@ -1778,6 +1814,7 @@ class ExperimentLauncher:
         process = subprocess.Popen(
             runner_command,
             cwd=PROJECT_ROOT,
+            env=search_environment(),
         )
 
         try:

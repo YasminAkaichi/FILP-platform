@@ -314,10 +314,13 @@ def main() -> None:
 
     _, _, bias_file = load_kbpath(dataset_path)
 
+    import os as _os
+
     settings = Settings(
         bias_file,
         None,
         None,
+        eval_timeout=float(_os.environ.get("FILP_EVAL_TIMEOUT", "0.001")),
     )
 
     tester = FederatedTester(settings)

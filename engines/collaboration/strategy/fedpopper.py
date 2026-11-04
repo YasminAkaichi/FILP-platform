@@ -65,24 +65,30 @@ class EarlyStopSignal(Exception):
     """
 
 
+# A rejected Flower round is retried with the same program at most this many
+# times in a row (see FedPopper._reject_round_and_continue).
+MAX_CONSECUTIVE_REJECTIONS = 5
+
 OUTCOME_ENCODING = {"all": 1, "some": 2, "none": 3}
 OUTCOME_DECODING = {1: "all", 2: "some", 3: "none"}
 
+# Aggregation of the answers of several clients, for the positive examples
+# (E+) and for the negative ones (E-): the result is ALL only if every client
+# says ALL, NONE only if every client says NONE, SOME in every other case.
+#
+# The table must be COMPLETE (all 9 pairs): aggregate_outcomes() falls back to
+# the value accumulated so far when a pair is missing, which silently gave
+# NONE for (none, some) (e.g. clients answering NONE, SOME, SOME aggregated to
+# NONE instead of SOME) and made the search diverge from the centralized one.
+_OUTCOMES = ("all", "some", "none")
+
 AGG_TABLE_POS = {
-    ("all","all"): "all",
-    ("all","some"): "some",
-    ("all","none"): "some",
-    ("some","some"): "some",
-    ("some","none"): "some",
-    ("none","none"): "none",
+    (a, b): (a if a == b else "some")
+    for a in _OUTCOMES
+    for b in _OUTCOMES
 }
 
-AGG_TABLE_NEG = {
-    ("some","some"): "some",
-    ("some","none"): "some",
-    ("none","some"): "some",
-    ("none","none"): "none",
-}
+AGG_TABLE_NEG = dict(AGG_TABLE_POS)
 
 
 # ------------------------------------------------------
@@ -345,6 +351,9 @@ class FedPopper(Strategy):
                             "epsilon_positive": str(outcome[0]),
                             "epsilon_negative": str(outcome[1]),
                             "is_final_validation": False,
+                            "client_outcomes": list(
+                                getattr(self, "_current_client_outcomes", [])
+                            ),
                         }
                     )
 
@@ -632,7 +641,48 @@ class FedPopper(Strategy):
         ]
     
     def _reject_round_and_continue(self, fed_score: float = 0.0):
-        """Reject a partial/failed Flower round while keeping Popper synchronized."""
+        """Reject a partial/failed Flower round while keeping Popper synchronized.
+
+        A rejected round used to hand Popper an INVENTED answer for the
+        program being tested ((none, some), score 0, no rule feedback). Popper
+        then pruned as if the program covered no positive example, although no
+        client had really tested it: the search diverged from the centralized
+        one and could even lose the solution. It happened by chance (typically
+        in round 1, when not every client has answered yet), which made runs of
+        the same benchmark take a different number of rounds (174 or 194 on
+        zendo1).
+
+        Now the SAME program is sent again in the next Flower round, so that
+        the clients really test it; Popper keeps waiting for the real answer.
+        Only after MAX_CONSECUTIVE_REJECTIONS failures in a row does the old
+        behaviour apply, so that a client that never answers cannot block the
+        search forever."""
+
+        self._consecutive_rejections = (
+            getattr(self, "_consecutive_rejections", 0) + 1
+        )
+
+        if (
+            not self.early_stop
+            and self._current_hyp is not None
+            and self._consecutive_rejections <= MAX_CONSECUTIVE_REJECTIONS
+        ):
+            log(
+                WARNING,
+                f"Round rejected ({self._consecutive_rejections}/"
+                f"{MAX_CONSECUTIVE_REJECTIONS}): sending the same program "
+                "again instead of inventing an answer.",
+            )
+            with self._lock:
+                program = self._current_hyp
+            rules_arr = np.array(
+                [Clause.to_code(r) for r in program],
+                dtype="<U1000",
+            )
+            return (
+                ndarrays_to_parameters([rules_arr]),
+                {"fed_score": fed_score},
+            )
 
         with self._lock:
             #self._current_fb = (("none", "some"), fed_score)
@@ -706,6 +756,7 @@ class FedPopper(Strategy):
 
         epsilons = []
         scores = []
+        per_client_outcomes = []
         client_inconsistent_feedbacks = []
         client_totally_incomplete_feedbacks = []
 
@@ -756,6 +807,20 @@ class FedPopper(Strategy):
             epsilons.append(eps)
             scores.append(score)
 
+            # Stable client number for the hypothesis log (Flower's own
+            # client ids are random strings; Flower may also return the
+            # results in a different order from one round to the next).
+            numbers = self.__dict__.setdefault("_client_numbers", {})
+            number = numbers.setdefault(client.cid, len(numbers) + 1)
+            per_client_outcomes.append(
+                {
+                    "client": number,
+                    "epsilon_positive": eps[0],
+                    "epsilon_negative": eps[1],
+                    "score": float(score),
+                }
+            )
+
             log(INFO, f"[Round {server_round}] client {client.cid} -> outcome={eps}, score={score}")
 
         if len(epsilons) < self.min_fit_clients:
@@ -793,6 +858,8 @@ class FedPopper(Strategy):
 
         log(INFO, f"[Round {server_round}] aggregated outcome={outcome}, fed_score={fed_score}")
 
+        self._consecutive_rejections = 0
+
         with self._lock:
             #self._current_fb = (outcome, fed_score)
             self._current_fb = (
@@ -800,6 +867,9 @@ class FedPopper(Strategy):
                 fed_score,
                 aggregated_inconsistent_rules,
                 aggregated_totally_incomplete_rules,
+            )
+            self._current_client_outcomes = sorted(
+                per_client_outcomes, key=lambda item: item["client"]
             )
 
         self._fb_ready.set()

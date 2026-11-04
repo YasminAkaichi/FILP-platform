@@ -150,10 +150,15 @@ def initialisation(
         path_dir
     )
 
+    import os as _os
+
     settings = Settings(
         bias_file,
         ex_file,
         bk_file,
+        # Set by the launcher (FILP_EVAL_TIMEOUT); Popper's own default
+        # (0.001 s) when run by hand.
+        eval_timeout=float(_os.environ.get("FILP_EVAL_TIMEOUT", "0.001")),
     )
 
     tester = Tester(

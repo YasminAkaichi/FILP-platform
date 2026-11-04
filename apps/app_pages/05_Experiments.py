@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -86,16 +87,26 @@ PALETTE = {
 
 CHART_COLORS = ["#1B2A4C", "#1B2A4C", "#C9CED8", "#C9CED8", "#1B2A4C", "#C9CED8"]
 
+# Status colors (text, background): green = completed, blue = running,
+# red = failed, amber = stopped by the user, gray = waiting.
+STATUS_COLORS = {
+    "success": ("#15803D", "#DCFCE7"),
+    "running": ("#1D4ED8", "#DBEAFE"),
+    "error": ("#B91C1C", "#FEE2E2"),
+    "stopped": ("#B45309", "#FEF3C7"),
+    "waiting": ("#6B7280", "#F3F4F6"),
+}
+
 STATUS_STYLE = {
-    "completed": (PALETTE["success"], PALETTE["success_soft"], "✓"),
-    "success": (PALETTE["success"], PALETTE["success_soft"], "✓"),
-    "running": (PALETTE["primary"], PALETTE["primary_soft"], "●"),
-    "pending": (PALETTE["neutral"], PALETTE["neutral_soft"], "○"),
-    "queued": (PALETTE["neutral"], PALETTE["neutral_soft"], "○"),
-    "failed": (PALETTE["error"], PALETTE["error_soft"], "✕"),
-    "error": (PALETTE["error"], PALETTE["error_soft"], "✕"),
+    "completed": (*STATUS_COLORS["success"], "✓"),
+    "success": (*STATUS_COLORS["success"], "✓"),
+    "running": (*STATUS_COLORS["running"], "●"),
+    "pending": (*STATUS_COLORS["waiting"], "○"),
+    "queued": (*STATUS_COLORS["waiting"], "○"),
+    "failed": (*STATUS_COLORS["error"], "✕"),
+    "error": (*STATUS_COLORS["error"], "✕"),
     # Stopped by the user with no result to keep (see core/run_control.py)
-    "stopped": (PALETTE["neutral"], PALETTE["neutral_soft"], "⏹"),
+    "stopped": (*STATUS_COLORS["stopped"], "⏹"),
 }
 
 METHOD_STYLE = {
@@ -880,7 +891,7 @@ if (
     with filter_method:
         method_filter = st.selectbox(
             "Method",
-            options=["All methods", "Consensus", "Collaboration", "Coordination"],
+            options=["All methods", "Consensus", "Centralized", "Collaboration", "Coordination", "MDL Federation"],
             label_visibility="collapsed",
         )
 
@@ -898,6 +909,12 @@ if (
             label_visibility="collapsed",
         )
 
+    # New experiments appear on page 1: go back to it when the list has grown,
+    # instead of staying on a later page opened before the launch.
+    if st.session_state.get("_experiments_seen_total") != len(all_benchmarks):
+        st.session_state["experiments_page"] = 1
+        st.session_state["_experiments_seen_total"] = len(all_benchmarks)
+
     filtered_benchmarks = [
         b
         for b in all_benchmarks
@@ -906,7 +923,10 @@ if (
             or search_query.lower() in b["name"].lower()
             or search_query.lower() in b["dataset"].lower()
         )
-        and (method_filter == "All methods" or b["approach"] == method_filter.lower())
+        and (
+            method_filter == "All methods"
+            or b["approach"] == method_filter.lower().replace(" ", "_")
+        )
         and (dataset_filter == "All datasets" or b["dataset"] == dataset_filter)
         and (
             status_filter == "All statuses"
@@ -1181,6 +1201,96 @@ def render_centralized_baseline_block(consensus: dict) -> None:
             st.rerun()
 
 
+def render_whole_dataset_baseline_block(benchmark: dict) -> None:
+    """Coordination / Collaboration: launch Popper centralized on the WHOLE
+    dataset (no train/test split), the fair comparison since these approaches
+    also learn from all the examples. Same dataset, seed and number of runs."""
+    with get_connection() as connection:
+        baselines = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT id, status, number_of_runs FROM benchmarks "
+                "WHERE approach = 'centralized' AND dataset = ? "
+                "AND reference_benchmark_id IS NULL ORDER BY id DESC",
+                (benchmark["dataset"],),
+            ).fetchall()
+        ]
+
+    key = f"_whole_baseline_bg_{benchmark['id']}"
+    bg = st.session_state.get(key)
+
+    with st.container(border=True):
+        st.markdown(
+            '<div class="section-title">Centralized baseline on the whole dataset</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="section-caption">'
+            "Runs Popper once on all the examples of "
+            f"“{benchmark['dataset']}” (no clients, no train/test split), "
+            f"{benchmark['number_of_runs']} time(s) with the same seed as this "
+            "experiment. Coordination and Collaboration also learn from all the "
+            "examples, so this is the fair reference for time and size of the "
+            "hypothesis. It is shown in the Coordination tab of Analytics."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        if bg is not None and not bg.done:
+            render_run_monitor(
+                bg,
+                key=f"whole_baseline_{benchmark['id']}",
+                title="Running the centralized baseline…",
+            )
+            st.stop()
+
+        if bg is not None and bg.done:
+            st.session_state.pop(key, None)
+            if bg.error is not None:
+                st.error(f"The centralized run failed: {bg.error}")
+            elif bg.stopped_without_result:
+                st.warning("The centralized run was stopped before any result.")
+            else:
+                st.success(f"Centralized baseline saved as experiment #{bg.result}.")
+                baselines = [
+                    {"id": bg.result, "status": "COMPLETED", "number_of_runs": benchmark["number_of_runs"]}
+                ] + [b for b in baselines if b["id"] != bg.result]
+
+        for baseline in baselines:
+            columns = st.columns([4, 1])
+            columns[0].markdown(
+                f"Experiment #{baseline['id']} · {baseline['number_of_runs']} run(s) · "
+                f"{render_badge(baseline['status'])}",
+                unsafe_allow_html=True,
+            )
+            if columns[1].button("Open", key=f"open_whole_baseline_{benchmark['id']}_{baseline['id']}"):
+                st.session_state["selected_benchmark_id"] = baseline["id"]
+                st.session_state["experiments_view"] = "detail"
+                st.rerun()
+
+        label = "Run it again" if baselines else "Run centralized on the whole dataset"
+        if st.button(label, key=f"run_whole_baseline_{benchmark['id']}", type="primary"):
+            config = BenchmarkConfig(
+                name=f"Centralized, whole {benchmark['dataset']} · same seed as #{benchmark['id']}",
+                approach="centralized",
+                dataset=benchmark["dataset"],
+                number_of_clients=1,
+                partition_strategy="iid",
+                number_of_runs=int(benchmark["number_of_runs"]),
+                base_seed=int(benchmark["base_seed"]),
+                learner="popper",
+                rounds=int(benchmark.get("rounds") or 35000),
+                timeout=int(benchmark.get("timeout") or 600),
+                server_address=f"localhost:{find_free_port()}",
+            )
+            st.session_state[key] = BackgroundRun(
+                lambda control, _config=config: BenchmarkLauncher().run(
+                    _config, control=control
+                )
+            )
+            st.rerun()
+
+
 selected_benchmark_id = st.session_state["selected_benchmark_id"]
 
 metadata = load_benchmark_metadata(selected_benchmark_id)
@@ -1210,10 +1320,23 @@ with header_left:
         st.session_state["experiments_view"] = "list"
         st.rerun()
 
+    # Hybrid evaluation (Coordination): second search, tested by ONE client
+    # holding the whole dataset ("client 0, centralized").
+    is_client_zero = metadata["approach"] in ("coordination", "collaboration") and str(
+        metadata.get("name") or ""
+    ).startswith("Centralized testing")
+    _federated_match = re.search(r"same seed as #(\d+)", str(metadata.get("name") or ""))
+    federated_of = int(_federated_match.group(1)) if _federated_match else None
+
     page_title = (
         f"Centralized baseline of experiment #{metadata['reference_benchmark_id']}"
         if metadata["approach"] == "centralized" and metadata.get("reference_benchmark_id")
-        else f"Learning by {approach_label}"
+        else (
+            "Client 0 (centralized) of the hybrid evaluation"
+            + (f" — experiment #{federated_of}" if federated_of else "")
+            if is_client_zero
+            else f"Learning by {approach_label}"
+        )
     )
     st.markdown(
         f'<div style="font-size:2rem; font-weight:750; color:{PALETTE["text"]}; '
@@ -1239,6 +1362,17 @@ with header_left:
         header_chips.append(("Learner", str(metadata.get("learner") or "popper").title()))
     header_chips.append(("Date", (metadata.get("created_at") or "—")[:10]))
     render_chips(header_chips)
+
+    if is_client_zero:
+        st.info(
+            "**Client 0 (centralized)** is the second search of the hybrid evaluation "
+            "(Bach4Popper, centralized testing). It is the same search as "
+            + (f"experiment #{federated_of}" if federated_of else "the federated one")
+            + ", but a single client that holds the WHOLE dataset tests every program, and "
+            "its outcome gives the constraints directly (no aggregation over several clients). "
+            "Its times (learning, Popper core, client evaluation) are compared with the "
+            "federated search in Analytics."
+        )
 
 with header_right:
     st.write("")
@@ -1289,11 +1423,19 @@ if is_consensus_approach:
     tab_overview, tab_models, tab_predictions, tab_clients, tab_dataset = st.tabs(
         ["Overview", "Models", "Predictions", "Clients", "🔍 Dataset"]
     )
+elif metadata["approach"] in ("coordination", "collaboration"):
+    # Coordination / Collaboration: extra tab comparing the tested programs of the federated
+    # search with those of "Client 0 (centralized)" (hybrid evaluation).
+    tab_overview, tab_models, tab_clients, tab_hypotheses, tab_dataset = st.tabs(
+        ["Overview", "Models", "Clients", "Hypotheses", "🔍 Dataset"]
+    )
+    tab_predictions = None
 else:
     tab_overview, tab_models, tab_clients, tab_dataset = st.tabs(
         ["Overview", "Models", "Clients", "🔍 Dataset"]
     )
     tab_predictions = None
+    tab_hypotheses = None
 
 # --- Overview tab ------------------------------------------------------
 
@@ -1315,6 +1457,9 @@ with tab_overview:
 
     if metadata["approach"] == "consensus":
         render_centralized_baseline_block(metadata)
+
+    if metadata["approach"] in ("coordination", "collaboration"):
+        render_whole_dataset_baseline_block(metadata)
 
     if metadata["approach"] == "consensus":
         with st.container(border=True):
@@ -2281,7 +2426,9 @@ with tab_clients:
             client_df = pd.DataFrame(
                 [
                     {
-                        "Client": row["client_id"],
+                        "Client": (
+                            "0 (centralized)" if is_client_zero else row["client_id"]
+                        ),
                         "Partition": row["dataset_partition"],
                         "Examples": row["number_of_examples"],
                         "Positive": row["number_of_positive_examples"],
@@ -2320,7 +2467,7 @@ with tab_clients:
                 distribution_long = pd.DataFrame(
                     [
                         {
-                            "Client": f"C{row['client_id']}",
+                            "Client": "C0 (centralized)" if is_client_zero else f"C{row['client_id']}",
                             "Type": kind,
                             "Count": row[key],
                         }
@@ -2344,7 +2491,7 @@ with tab_clients:
                 )
                 performance_long = pd.DataFrame(
                     [
-                        {"Client": f"C{row['client_id']}", "Type": kind, "Count": row[key]}
+                        {"Client": "C0 (centralized)" if is_client_zero else f"C{row['client_id']}", "Type": kind, "Count": row[key]}
                         for row in selected_client_results
                         for kind, key in (
                             ("TP", "tp"),
@@ -2398,6 +2545,14 @@ with tab_clients:
                     use_container_width=True,
                     hide_index=True,
                 )
+
+# --- Hypotheses tab (Coordination) -----------------------------------------
+
+if metadata["approach"] in ("coordination", "collaboration"):
+    with tab_hypotheses:
+        from apps.hypothesis_tab import render_hypothesis_tab
+
+        render_hypothesis_tab(selected_benchmark_id, federated_of, is_client_zero)
 
 # --- Dataset explorer tab ---------------------------------------------------
 

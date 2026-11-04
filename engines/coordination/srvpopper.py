@@ -3,6 +3,7 @@
 #   FILP Distributed Server using BLPy protocol
 # ------------------------------------------------------
 
+import json
 import os
 import re
 import socket
@@ -223,6 +224,7 @@ def popper_initialisation(path_dir):
         bias_file,
         None,
         None,
+        eval_timeout=float(os.environ.get("FILP_EVAL_TIMEOUT", "0.001")),
     )
 
     stats = Stats(
@@ -407,6 +409,7 @@ def get_epsilon_pairs(
     store,
     nb_client,
     tour,
+    first_client=1,
 ):
 
     epsilon_pairs = []
@@ -416,7 +419,7 @@ def get_epsilon_pairs(
     )
 
     for client_id in range(
-        1,
+        first_client,
         nb_client + 1,
     ):
 
@@ -601,6 +604,7 @@ def get_rule_feedback(
     nb_client,
     tour,
     number_of_clauses,
+    first_client=1,
 ):
     """
     Retrieve clause-level feedback from all clients.
@@ -624,7 +628,7 @@ def get_rule_feedback(
     all_totally_incomplete_rules = []
 
     for client_id in range(
-        1,
+        first_client,
         nb_client + 1,
     ):
 
@@ -860,6 +864,11 @@ def tell_final_hypothesis(
 #  FEDERATED TEST
 # ======================================================
 
+# What each client answered for the program tested last (filled by
+# federated_test, read by the main loop to build hypothesis_log.json).
+LAST_CLIENT_OUTCOMES: list = []
+
+
 def federated_test(
     program,
     store,
@@ -926,6 +935,19 @@ def federated_test(
         )
         for epsilon_pair in epsilon_pairs
     ]
+
+    LAST_CLIENT_OUTCOMES.clear()
+    for client_number, (pos, neg, client_score) in enumerate(
+        parsed_epsilon_pairs, start=1
+    ):
+        LAST_CLIENT_OUTCOMES.append(
+            {
+                "client": client_number,
+                "epsilon_positive": str(pos),
+                "epsilon_negative": str(neg),
+                "score": float(client_score),
+            }
+        )
 
     # --------------------------------------------------
     # Aggregate ALL / SOME / NONE
@@ -1082,6 +1104,10 @@ def run_server(
     best_score = None
     best_rules_str = None
     best_program = None
+
+    # One entry per program tested (same format as the Collaboration side),
+    # saved to hypothesis_log.json: lets two searches be compared round by round.
+    hypothesis_log = []
     best_round = None
 
     round_id = 0
@@ -1182,23 +1208,40 @@ def run_server(
                 # GENERATE
                 # ------------------------------------------
 
-                with st.stats.duration(
-                    "generate"
-                ):
+                # The GENERATE step (the ASP solver proposing the next
+                # program) is part of the server's own Popper work, like
+                # build / ground / add below. It used to be timed only in
+                # st.stats and never added to tCentralPopper, so it showed
+                # up as "not measured" time (large when the search space
+                # is big: the solver is then the bottleneck).
+                start_generate = timer()
 
-                    model = (
-                        st.solver.get_model()
-                    )
+                try:
 
-                    if not model:
-                        break
+                    with st.stats.duration(
+                        "generate"
+                    ):
 
-                    (
-                        program,
-                        before,
-                        min_clause,
-                    ) = generate_program(
-                        model
+                        model = (
+                            st.solver.get_model()
+                        )
+
+                        if not model:
+                            break
+
+                        (
+                            program,
+                            before,
+                            min_clause,
+                        ) = generate_program(
+                            model
+                        )
+
+                finally:
+
+                    tCentralPopper += (
+                        timer()
+                        - start_generate
                     )
 
                 # ------------------------------------------
@@ -1230,6 +1273,26 @@ def run_server(
                 )
 
                 st.stats.total_programs += 1
+
+                hypothesis_log.append(
+                    {
+                        "sequence_number": int(round_id),
+                        "hypothesis": "\n".join(rules_str),
+                        "score": float(score),
+                        "epsilon_positive": str(outcome[0]),
+                        "epsilon_negative": str(outcome[1]),
+                        "is_final_validation": False,
+                        "client_outcomes": [
+                            dict(item) for item in LAST_CLIENT_OUTCOMES
+                        ],
+                        "inconsistent_rules": [
+                            bool(x) for x in inconsistent_rules
+                        ],
+                        "totally_incomplete_rules": [
+                            bool(x) for x in totally_incomplete_rules
+                        ],
+                    }
+                )
 
                 print(
                     f"[Program #{round_id}] "
@@ -1484,8 +1547,6 @@ def run_server(
 
     if args.output_dir:
 
-        import json
-
         output_dir = os.path.abspath(args.output_dir)
         os.makedirs(output_dir, exist_ok=True)
 
@@ -1512,6 +1573,13 @@ def run_server(
             "tn": 0,
             "fp": 0,
         }
+
+        with open(
+            os.path.join(output_dir, "hypothesis_log.json"),
+            "w",
+            encoding="utf-8",
+        ) as log_file:
+            json.dump(hypothesis_log, log_file, indent=2)
 
         result_path = os.path.join(
             output_dir, "server_result.json"

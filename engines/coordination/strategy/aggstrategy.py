@@ -19,21 +19,23 @@ log = getLogger(__name__)
 OUTCOME_ENCODING = {"all": 1, "some": 2, "none": 3}
 OUTCOME_DECODING = {1: "all", 2: "some", 3: "none"}
 
+# Aggregation of the answers of several clients, for the positive examples
+# (E+) and for the negative ones (E-): the result is ALL only if every client
+# says ALL, NONE only if every client says NONE, SOME in every other case.
+#
+# The table must be COMPLETE (all 9 pairs): aggregate_outcomes() falls back to
+# the value accumulated so far when a pair is missing, which silently gave
+# NONE for (none, some) (e.g. clients answering NONE, SOME, SOME aggregated to
+# NONE instead of SOME) and made the search diverge from the centralized one.
+_OUTCOMES = ("all", "some", "none")
+
 AGG_TABLE_POS = {
-    ("all","all"): "all",
-    ("all","some"): "some",
-    ("all","none"): "some",
-    ("some","some"): "some",
-    ("some","none"): "some",
-    ("none","none"): "none",
+    (a, b): (a if a == b else "some")
+    for a in _OUTCOMES
+    for b in _OUTCOMES
 }
 
-AGG_TABLE_NEG = {
-    ("some","some"): "some",
-    ("some","none"): "some",
-    ("none","some"): "some",
-    ("none","none"): "none",
-}
+AGG_TABLE_NEG = dict(AGG_TABLE_POS)
 
 
 # ------------------------------------------------------

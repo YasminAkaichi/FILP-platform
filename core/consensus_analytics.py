@@ -113,6 +113,15 @@ def load_consensus_runs() -> pd.DataFrame:
             "partition": run["partition"],
             "seed": int(run["base_seed"] or 0) + int(run["run_number"]) - 1,
             "n_test": int(consensus["tp"] + consensus["fp"] + consensus["tn"] + consensus["fn"]),
+            "n_test_pos": int(consensus["tp"] + consensus["fn"]),
+            "n_test_neg": int(consensus["tn"] + consensus["fp"]),
+            # Accuracy of always predicting the most frequent class of the test set.
+            "majority_class": (
+                max(consensus["tp"] + consensus["fn"], consensus["tn"] + consensus["fp"])
+                / (consensus["tp"] + consensus["fp"] + consensus["tn"] + consensus["fn"])
+                if (consensus["tp"] + consensus["fp"] + consensus["tn"] + consensus["fn"])
+                else float("nan")
+            ),
             "n_empty": sum(1 for count, _ in stats if count == 0),
             "rules_total": sum(count for count, _ in stats),
             "rules_per_hypothesis": float(np.mean([c for c, _ in stats])) if stats else 0.0,
@@ -182,6 +191,64 @@ def load_consensus_runs() -> pd.DataFrame:
     return frame
 
 
+def load_partitions(runs: pd.DataFrame) -> pd.DataFrame:
+    """Positive / negative examples held by each client, and in the common
+    test set, for every run in `runs` (one row per run and part)."""
+    if runs.empty:
+        return pd.DataFrame()
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT experiment_id, client_id, number_of_positive_examples AS pos, "
+            "number_of_negative_examples AS neg FROM client_results "
+            f"WHERE experiment_id IN ({','.join('?' * len(runs))})",
+            [int(i) for i in runs["experiment_id"]],
+        ).fetchall()
+    clients = pd.DataFrame([dict(r) for r in rows])
+
+    records = []
+    for _, run in runs.iterrows():
+        mine = clients[clients["experiment_id"] == run["experiment_id"]] if not clients.empty else clients
+        for _, row in mine.sort_values("client_id").iterrows():
+            records.append(
+                {
+                    "experiment_id": run["experiment_id"],
+                    "part": f"Client {int(row['client_id'])}",
+                    "order": int(row["client_id"]),
+                    "pos": int(row["pos"] or 0),
+                    "neg": int(row["neg"] or 0),
+                }
+            )
+        records.append(
+            {
+                "experiment_id": run["experiment_id"],
+                "part": "Test (common)",
+                "order": 10**6,
+                "pos": int(run["n_test_pos"]),
+                "neg": int(run["n_test_neg"]),
+            }
+        )
+    return pd.DataFrame(records)
+
+
+def keep_one_run_per_seed(runs: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Runs launched again with the same dataset, learner, number of clients,
+    partition and seed use the very same split, hence give the same result:
+    they are repeats, not independent runs. Counting them would shrink the
+    error bars and fake a large number of runs. For each such group, keep the
+    run that has a linked centralized baseline, then the most recent one.
+    Returns the kept runs and the number of runs dropped."""
+    if runs.empty:
+        return runs, 0
+    ranked = runs.assign(_has_baseline=runs["baseline_accuracy"].notna()).sort_values(
+        ["_has_baseline", "experiment_id"], ascending=[False, False]
+    )
+    kept = ranked.drop_duplicates(
+        ["dataset", "learner", "k", "partition", "seed"], keep="first"
+    ).drop(columns="_has_baseline")
+    return kept.sort_values(["dataset", "learner", "k", "partition", "seed"]).reset_index(drop=True), len(runs) - len(kept)
+
+
 def load_vote_traces(experiment_id: int) -> list[dict]:
     path = (
         PROJECT_ROOT / "artifacts" / f"experiment_{experiment_id}" / "consensus" / "vote_traces.json"
@@ -219,8 +286,53 @@ def paired_p_value(first, second) -> float:
 
         return float(2 * scipy_stats.t.sf(abs(t_statistic), differences.size - 1))
     except ImportError:
-        # Normal approximation when SciPy is not installed.
-        return float(math.erfc(abs(t_statistic) / math.sqrt(2)))
+        # SciPy is not installed: exact two-sided p-value of Student's t
+        # distribution (the normal approximation is far too optimistic with
+        # only a handful of runs).
+        return _student_two_sided_p(abs(t_statistic), differences.size - 1)
+
+
+def _student_two_sided_p(t: float, dof: int) -> float:
+    """Two-sided p-value of Student's t distribution, without SciPy:
+    p = I_x(dof/2, 1/2) with x = dof / (dof + t^2) (regularized incomplete beta)."""
+    x = dof / (dof + t * t)
+    a, b = dof / 2.0, 0.5
+
+    def beta_continued_fraction(x, a, b):
+        tiny = 1e-300
+        qab, qap, qam = a + b, a + 1.0, a - 1.0
+        c, d = 1.0, 1.0 - qab * x / qap
+        d = 1.0 / (d if abs(d) > tiny else tiny)
+        h = d
+        for m in range(1, 300):
+            m2 = 2 * m
+            aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+            d = 1.0 + aa * d
+            d = 1.0 / (d if abs(d) > tiny else tiny)
+            c = 1.0 + aa / c
+            c = c if abs(c) > tiny else tiny
+            h *= d * c
+            aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+            d = 1.0 + aa * d
+            d = 1.0 / (d if abs(d) > tiny else tiny)
+            c = 1.0 + aa / c
+            c = c if abs(c) > tiny else tiny
+            delta = d * c
+            h *= delta
+            if abs(delta - 1.0) < 1e-12:
+                break
+        return h
+
+    log_front = (
+        math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+        + a * math.log(x) + b * math.log1p(-x)
+    ) if 0.0 < x < 1.0 else None
+    if log_front is None:
+        return 1.0 if x >= 1.0 else 0.0
+    front = math.exp(log_front)
+    if x < (a + 1.0) / (a + b + 2.0):
+        return float(front * beta_continued_fraction(x, a, b) / a)
+    return float(1.0 - front * beta_continued_fraction(1.0 - x, b, a) / b)
 
 
 def summary_table(frame: pd.DataFrame, metric: str) -> pd.DataFrame:
@@ -238,9 +350,15 @@ def summary_table(frame: pd.DataFrame, metric: str) -> pd.DataFrame:
                 "Learner": learner,
                 "Setting": setting,
                 "Runs": len(subset),
+                "Test examples": int(subset["n_test"].iloc[0]),
+                "Majority class": (
+                    f"{subset['majority_class'].mean():.3f}"
+                    if metric == "accuracy"
+                    else "0.000" if metric == "mcc" else "—"
+                ),
                 "Consensus": f"{consensus_mean:.3f} ± {consensus_se:.3f}",
-                "Mean of the H_i": f"{member_mean:.3f} ± {member_se:.3f}",
-                "Best H_i": f"{best_mean:.3f} ± {best_se:.3f}",
+                "Average client (alone)": f"{member_mean:.3f} ± {member_se:.3f}",
+                "Best client (alone)": f"{best_mean:.3f} ± {best_se:.3f}",
                 "Centralized (same split)": "—",
                 "p (consensus vs centralized)": float("nan"),
             }
@@ -252,6 +370,40 @@ def summary_table(frame: pd.DataFrame, metric: str) -> pd.DataFrame:
                     linked[f"consensus_{metric}"], linked[f"baseline_{metric}"]
                 )
             rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def cost_table(frame: pd.DataFrame) -> pd.DataFrame:
+    """One row per dataset and setting: size of the learned theories, learning
+    time and communication, consensus next to the centralized baseline
+    (mean ± SE over seeds). Rules and literals are per hypothesis; the
+    consensus time is that of the slowest client (clients learn in parallel)."""
+
+    def cell(values, digits=2) -> str:
+        mean, se = mean_and_se(values)
+        if mean != mean:
+            return "—"
+        return f"{mean:.{digits}f} ± {se:.{digits}f}"
+
+    rows = []
+    for (dataset, learner), group in frame.groupby(["dataset", "learner"]):
+        for setting, subset in group.groupby("setting"):
+            linked = subset[subset["baseline_accuracy"].notna()]
+            rows.append(
+                {
+                    "Dataset": dataset,
+                    "Learner": learner,
+                    "Setting": setting,
+                    "Runs": len(subset),
+                    "Rules (consensus)": cell(subset["rules_per_hypothesis"], 1),
+                    "Rules (centralized)": cell(linked["baseline_rules"], 1),
+                    "Literals (consensus)": cell(subset["body_literals"]),
+                    "Literals (centralized)": cell(linked["baseline_body"]),
+                    "Time s (consensus)": cell(subset["time_slowest"], 1),
+                    "Time s (centralized)": cell(linked["baseline_time"], 1),
+                    "Upload KB (consensus)": cell(subset["upload_kb"]),
+                }
+            )
     return pd.DataFrame(rows)
 
 

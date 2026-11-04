@@ -3,6 +3,7 @@ from __future__ import annotations
 from core.benchmark import BenchmarkConfig
 from core.experiment import ExperimentConfig
 from core.launcher import ExperimentLauncher
+from core.port_utils import find_free_port
 from core.run_control import RunControl, RunStopped
 from database.repository import ExperimentRepository
 from database.schema import initialize_database
@@ -41,6 +42,33 @@ class BenchmarkLauncher:
         print("========================================\n")
 
         runs_done = 0
+
+        # Hybrid evaluation (Coordination): a second benchmark holds the
+        # centralized-testing runs, linked to this one by its name.
+        central_benchmark_id = None
+        if config.centralized_testing and config.approach in (
+            "coordination",
+            "collaboration",
+        ):
+            central_benchmark_id = repository.create_benchmark(
+                BenchmarkConfig(
+                    name=(
+                        f"Centralized testing, whole {config.dataset} "
+                        f"· same seed as #{benchmark_id}"
+                    ),
+                    approach=config.approach,
+                    dataset=config.dataset,
+                    number_of_clients=1,
+                    partition_strategy="iid",
+                    number_of_runs=config.number_of_runs,
+                    base_seed=config.base_seed,
+                    learner=config.learner,
+                    rounds=config.rounds,
+                    timeout=config.timeout,
+                    timing_mode=config.timing_mode,
+                    server_address=config.server_address,
+                )
+            )
 
         try:
             for run_number in range(1, config.number_of_runs + 1):
@@ -108,6 +136,43 @@ class BenchmarkLauncher:
                 )
                 runs_done += 1
 
+                # Hybrid evaluation, second search: the same Coordination
+                # search, but ONE client holding the whole dataset tests the
+                # programs (centralized testing). Run right after the
+                # federated run, alone on the machine, so that both are
+                # timed in the same conditions.
+                if central_benchmark_id is not None and not (
+                    control is not None and control.stop_requested
+                ):
+                    print(
+                        f"[Benchmark] Run {run_number}: centralized "
+                        "testing (1 client, whole dataset)..."
+                    )
+                    central_experiment_id = experiment_launcher.run(
+                        ExperimentConfig(
+                            approach=config.approach,
+                            dataset=config.dataset,
+                            number_of_clients=1,
+                            partition_strategy="iid",
+                            learner=config.learner,
+                            random_seed=random_seed,
+                            rounds=config.rounds,
+                            timeout=config.timeout,
+                            timing_mode=config.timing_mode,
+                            # Fresh port: the federated server of this run
+                            # may not have released its own yet.
+                            server_address=f"localhost:{find_free_port()}",
+                        ),
+                        process_tracker=process_tracker,
+                        control=control,
+                    )
+                    repository.add_benchmark_run(
+                        benchmark_id=central_benchmark_id,
+                        experiment_id=central_experiment_id,
+                        run_number=run_number,
+                        random_seed=random_seed,
+                    )
+
                 print(
                     f"[Benchmark] Run {run_number}/"
                     f"{config.number_of_runs} completed. "
@@ -127,6 +192,9 @@ class BenchmarkLauncher:
             else:
                 repository.complete_benchmark(benchmark_id)
 
+            if central_benchmark_id is not None:
+                repository.complete_benchmark(central_benchmark_id)
+
             print(
                 f"\n[Benchmark] Benchmark {benchmark_id} "
                 "completed successfully."
@@ -135,6 +203,14 @@ class BenchmarkLauncher:
             return benchmark_id
 
         except RunStopped:
+            if central_benchmark_id is not None:
+                if runs_done > 0:
+                    repository.complete_benchmark(central_benchmark_id)
+                else:
+                    repository.stop_benchmark(
+                        central_benchmark_id,
+                        "Stopped by the user before any run produced a result.",
+                    )
             if runs_done > 0:
                 # Earlier runs of this benchmark did produce results: keep
                 # them, the stopped run is simply not counted.
@@ -159,6 +235,11 @@ class BenchmarkLauncher:
             raise RunStopped(benchmark_id)
 
         except Exception as error:
+            if central_benchmark_id is not None:
+                repository.fail_benchmark(
+                    benchmark_id=central_benchmark_id,
+                    error_message=str(error),
+                )
             repository.fail_benchmark(
                 benchmark_id=benchmark_id,
                 error_message=str(error),
