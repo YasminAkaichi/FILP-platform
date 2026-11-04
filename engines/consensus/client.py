@@ -22,6 +22,13 @@ python -m engines.consensus.client \
 
 from __future__ import annotations
 
+import os
+
+# The learners run in subprocesses started from a process that already holds
+# gRPC threads (Flower). With gRPC's fork handlers enabled, a child can die at
+# random (SIGPIPE, exit code -13). They must be disabled BEFORE flwr/grpc load.
+os.environ.setdefault("GRPC_ENABLE_FORK_SUPPORT", "0")
+
 import argparse
 import json
 import logging

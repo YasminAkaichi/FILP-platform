@@ -23,7 +23,10 @@ import streamlit as st
 from core.consensus_analytics import (
     BASELINE_LABEL,
     agreement_matrix,
+    cost_table,
+    keep_one_run_per_seed,
     load_consensus_runs,
+    load_partitions,
     load_vote_traces,
     mean_and_se,
     summary_table,
@@ -42,9 +45,10 @@ PALETTE = [NAVY, GREY, LIGHT, RED, PURPLE, PINK, TEAL]
 CENTRALIZED_LABEL = "Centralized (same split)"
 SERIES = {
     "Consensus": NAVY,
-    "Mean of the H_i": GREY,
-    "Best H_i": LIGHT,
+    "Average client (alone)": GREY,
+    "Best client (alone)": LIGHT,
     CENTRALIZED_LABEL: RED,
+    "Majority class": "#9CA3AF",
 }
 METRICS = {
     "accuracy": "Accuracy",
@@ -78,8 +82,9 @@ def _bars_with_error(
     height: int = 320,
     single_color: str = NAVY,
     unit_scale: bool = True,
+    log_scale: bool = False,
 ) -> alt.LayerChart:
-    encode_x = alt.X(f"{x}:N", title=None, sort=None, axis=alt.Axis(labelAngle=-30, labelLimit=200))
+    encode_x = alt.X(f"{x}:N", title=None, sort=None, axis=alt.Axis(labelAngle=-30, labelLimit=200, labelOverlap=False))
     offset = alt.XOffset(f"{color}:N") if color else alt.XOffset()
     color_encoding = (
         alt.Color(
@@ -104,11 +109,21 @@ def _bars_with_error(
         .encode(
             x=encode_x,
             xOffset=offset,
-            y=alt.Y("mean:Q", title=y_title, scale=alt.Scale(domain=[0, 1]) if unit_scale else alt.Undefined),
+            y=alt.Y(
+                "mean:Q",
+                title=y_title,
+                scale=(
+                    alt.Scale(type="log", domain=[0.1, float(data["hi"].max()) * 1.5], clamp=True)
+                    if log_scale
+                    else alt.Scale(domain=[0, 1]) if unit_scale else alt.Undefined
+                ),
+            ),
             color=color_encoding,
             tooltip=tooltip,
         )
     )
+    if log_scale:
+        data = data.assign(lo=data["lo"].clip(lower=0.1))
     errors = (
         alt.Chart(data)
         .mark_rule(color="#0F1B33")
@@ -118,7 +133,7 @@ def _bars_with_error(
 
 
 def render_consensus_tab() -> None:
-    runs = load_consensus_runs()
+    runs, repeated_runs = keep_one_run_per_seed(load_consensus_runs())
 
     st.markdown("### Learning by Consensus")
 
@@ -130,48 +145,106 @@ def render_consensus_tab() -> None:
         return
 
     # ------------------------------------------------------------------
-    # Filters
+    # Benchmark selection (the only filter)
     # ------------------------------------------------------------------
-    # Toggle buttons: every option stays visible, so a removed dataset can
-    # always be switched back on with one click.
-    datasets = sorted(runs["dataset"].unique())
-    chosen_datasets = st.pills(
-        "Datasets", datasets, selection_mode="multi", default=datasets,
-        key="consensus_filter_datasets",
-    ) or []
-    filter_columns = st.columns([2, 2, 1])
-    learners = sorted(runs["learner"].unique())
-    chosen_learners = filter_columns[0].pills(
-        "ILP system", learners, selection_mode="multi", default=learners,
-        format_func=str.title, key="consensus_filter_learners",
-    ) or []
-    partitions = sorted(runs["partition"].unique())
-    chosen_partitions = filter_columns[1].pills(
-        "Partition", partitions, selection_mode="multi", default=partitions,
-        format_func=lambda key: "IID" if key == "iid" else "Non-IID" if key == "non_iid" else key,
-        key="consensus_filter_partitions",
-    ) or []
-    metric = filter_columns[2].selectbox(
-        "Metric", list(METRICS), format_func=lambda m: METRICS[m]
+    # One toggle per benchmark: select the benchmarks to compare, everything
+    # below (figures, table, partitions) is computed from them alone.
+    benchmarks = (
+        runs.groupby("benchmark_id")
+        .agg(
+            dataset=("dataset", "first"),
+            learner=("learner", "first"),
+            k=("k", "first"),
+            partition=("partition", "first"),
+            n_runs=("seed", "nunique"),
+            has_baseline=("baseline_accuracy", lambda v: bool(v.notna().any())),
+        )
+        .reset_index()
+        .sort_values(["dataset", "benchmark_id"])
     )
 
-    frame = runs[
-        runs["dataset"].isin(chosen_datasets)
-        & runs["learner"].isin(chosen_learners)
-        & runs["partition"].isin(chosen_partitions)
+    def benchmark_label(row) -> str:
+        partition_name = "IID" if row.partition == "iid" else "Non-IID" if row.partition == "non_iid" else row.partition
+        return (
+            f"#{int(row.benchmark_id)} · {row.dataset} · {row.learner.title()} · "
+            f"k={int(row.k)} · {partition_name} · {int(row.n_runs)} run(s)"
+            + ("" if row.has_baseline else " · no centralized")
+        )
+
+    labels = {int(row.benchmark_id): benchmark_label(row) for row in benchmarks.itertuples()}
+
+    # Default selection: for each dataset, the Popper benchmark with 3 clients and an
+    # IID partition that has a centralized baseline and the most runs.
+    default_ids = (
+        benchmarks[
+            (benchmarks["learner"] == "popper") & (benchmarks["k"] == 3) & (benchmarks["partition"] == "iid")
+        ]
+        .sort_values(["has_baseline", "n_runs", "benchmark_id"])
+        .groupby(["dataset", "k", "partition"])
+        .tail(1)["benchmark_id"]
+        .astype(int)
+        .tolist()
+    ) or list(labels)[:4]
+
+    selection_key = "consensus_selected_benchmarks"
+    if selection_key not in st.session_state:
+        st.session_state[selection_key] = default_ids
+    st.session_state[selection_key] = [
+        key for key in st.session_state[selection_key] if key in labels
     ]
+
+    button_columns = st.columns([1.2, 1.2, 1.4, 6])
+    button_columns[0].button(
+        "Select all", key="consensus_bench_all",
+        on_click=lambda: st.session_state.__setitem__(selection_key, list(labels)),
+    )
+    button_columns[1].button(
+        "Clear", key="consensus_bench_none",
+        on_click=lambda: st.session_state.__setitem__(selection_key, []),
+    )
+    button_columns[2].button(
+        "Reset", key="consensus_bench_reset",
+        help="One benchmark per dataset: the most complete Popper run.",
+        on_click=lambda: st.session_state.__setitem__(selection_key, default_ids),
+    )
+    chosen_benchmarks = st.pills(
+        "Benchmarks (click to select or unselect)",
+        list(labels),
+        selection_mode="multi",
+        format_func=lambda key: labels[key],
+        key=selection_key,
+    ) or []
+
+    metric = st.selectbox(
+        "Metric of the table", list(METRICS), format_func=lambda m: METRICS[m],
+        help="The figures below always show accuracy and MCC.",
+    )
+
+    frame = runs[runs["benchmark_id"].isin(chosen_benchmarks)]
     if frame.empty:
-        st.info("No run matches these filters.")
+        st.info("Select at least one benchmark.")
         return
 
     frame = frame.copy()
     frame["group"] = frame["dataset"] + " · " + frame["learner"]
-    frame["bar"] = frame["group"] + " · " + frame["setting"]
+    # Bar label: the dataset, plus the setting only when it is not obvious.
+    multiple_settings = frame.groupby("dataset")["benchmark_id"].nunique().max() > 1
+    multiple_learners = frame["learner"].nunique() > 1
+    frame["bar"] = frame["dataset"] + frame.apply(
+        lambda r: (f" · {r['learner'].title()}" if multiple_learners else "")
+        + (f" · {r['setting']}" if multiple_settings else ""),
+        axis=1,
+    )
 
-    baseline_rows = int(frame[f"baseline_{metric}"].notna().sum())
+    if repeated_runs:
+        st.caption(
+            f"{repeated_runs} run(s) repeated with the same settings and the same seed were "
+            "ignored: they use the same split, so they are not independent runs."
+        )
+    baseline_rows = int(frame["baseline_accuracy"].notna().sum())
     st.caption(
-        f"{len(frame)} completed runs. Bars show the mean over runs (seeds) and the "
-        "standard error. "
+        f"{len(frame)} runs in the selected benchmarks. Bars show the mean over runs (seeds) and "
+        "the standard error. "
         + (
             f"“{CENTRALIZED_LABEL}” is the learner run once on the whole training set and "
             f"scored on the same test set ({baseline_rows} run(s) linked)."
@@ -182,35 +255,84 @@ def render_consensus_tab() -> None:
     )
     if (frame.groupby("bar").size() < 3).all():
         st.warning(
-            "Most settings have fewer than 3 runs: error bars and p-values need "
-            "several seeds (set “Runs” to 5–10 in the Simulation page)."
+            "Most selected benchmarks have fewer than 3 runs: error bars and p-values need "
+            "several seeds."
         )
 
     # ------------------------------------------------------------------
-    # Figure 1 — predictive performance
+    # Figure 1 — predictive performance (accuracy and MCC)
     # ------------------------------------------------------------------
-    with st.container(border=True):
-        st.markdown(
-            f"**Figure 1 — Predictive performance ({METRICS[metric].lower()}).** "
-            "The consensus next to its own members and to the centralized baseline."
-        )
+    def comparison(columns: list[tuple[str, str]], unit_scale: bool = True):
         pieces = []
-        for label, column in (
-            ("Consensus", f"consensus_{metric}"),
-            ("Mean of the H_i", f"mean_h_{metric}"),
-            ("Best H_i", f"best_h_{metric}"),
-            (CENTRALIZED_LABEL, f"baseline_{metric}"),
-        ):
+        for label, column in columns:
             aggregated = _aggregate(frame.dropna(subset=[column]), ["bar"], column)
             if aggregated.empty:
                 continue
             aggregated["series"] = label
             pieces.append(aggregated)
-        figure_one = pd.concat(pieces, ignore_index=True)
-        st.altair_chart(
-            _bars_with_error(figure_one, "bar", "series", "", SERIES, METRICS[metric]),
-            use_container_width=True,
+        return pd.concat(pieces, ignore_index=True) if pieces else pd.DataFrame()
+
+    with st.container(border=True):
+        st.markdown(
+            "**Figure 1 — Predictive performance.** The consensus (majority vote of all clients) next "
+            "to what each client achieves alone with its own local hypothesis H_i (average and best "
+            "client), and to the centralized baseline, all on the same test set."
         )
+        chart_columns = st.columns(2)
+        for column_box, (key, name) in zip(chart_columns, (("accuracy", "Accuracy"), ("mcc", "MCC"))):
+            data = comparison([
+                ("Consensus", f"consensus_{key}"),
+                ("Average client (alone)", f"mean_h_{key}"),
+                ("Best client (alone)", f"best_h_{key}"),
+                (CENTRALIZED_LABEL, f"baseline_{key}"),
+            ] + ([("Majority class", "majority_class")] if key == "accuracy" else []))
+            with column_box:
+                if data.empty:
+                    st.info(f"No {name} available.")
+                else:
+                    colors = SERIES if key == "accuracy" else {
+                        label: color for label, color in SERIES.items() if label != "Majority class"
+                    }
+                    chart = _bars_with_error(
+                        data, "bar", "series", name, colors, name, unit_scale=(key == "accuracy"),
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+
+    # ------------------------------------------------------------------
+    # Figure 2 — what it costs and how complex the theory is
+    # ------------------------------------------------------------------
+    with st.container(border=True):
+        st.markdown(
+            "**Figure 2 — Cost and size of the theory.** Learning time of the consensus is that "
+            "of the slowest client (clients learn in parallel); rules and literals are per "
+            "hypothesis."
+        )
+        cost_series = {"Consensus": NAVY, CENTRALIZED_LABEL: RED}
+        cost_columns = st.columns(3)
+        for column_box, (title, consensus_column, baseline_column, y_title) in zip(
+            cost_columns,
+            (
+                ("Learning time (log scale)", "time_slowest", "baseline_time", "seconds (log)"),
+                ("Rules per hypothesis", "rules_per_hypothesis", "baseline_rules", "rules"),
+                ("Body literals per rule", "body_literals", "baseline_body", "literals"),
+            ),
+        ):
+            data = comparison([
+                ("Consensus", consensus_column),
+                (CENTRALIZED_LABEL, baseline_column),
+            ])
+            with column_box:
+                if data.empty:
+                    st.info("No data.")
+                else:
+                    st.altair_chart(
+                        _bars_with_error(
+                            data, "bar", "series", title, cost_series, y_title,
+                            height=300, unit_scale=False,
+                            log_scale=title.startswith("Learning time"),
+                        ),
+                        use_container_width=True,
+                    )
 
     # ------------------------------------------------------------------
     # Table — summary and significance
@@ -227,6 +349,27 @@ def render_consensus_tab() -> None:
             "p (consensus vs centralized)"
         ].map(lambda value: f"{value:.3f}" if value == value else "needs ≥ 3 runs")
         st.dataframe(shown_table, use_container_width=True, hide_index=True)
+        st.caption(
+            "**How to read it.** “Runs” = number of seeds. “±” = standard error of the mean over "
+            "these runs (the spread between seeds divided by √runs): the smaller it is, the more "
+            "stable the mean. “Average / Best client (alone)” = the local hypotheses H_i taken "
+            "one by one. p = paired t-test of the consensus against the centralized learner "
+            "(same seeds); it needs at least 3 runs, and “--” in LaTeX means no difference "
+            "to test."
+        )
+        cost = cost_table(frame)
+        st.markdown(
+            "**Cost and size of the theory** — rules and body literals per hypothesis, learning "
+            "time (consensus: slowest client, since clients learn in parallel) and data sent by "
+            "the clients."
+        )
+        st.dataframe(cost, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download the cost table (CSV)",
+            cost.to_csv(index=False).encode("utf-8"),
+            file_name="consensus_cost.csv",
+            mime="text/csv",
+        )
         download_columns = st.columns(3)
         download_columns[0].download_button(
             "Download the table (CSV)",
@@ -251,243 +394,161 @@ def render_consensus_tab() -> None:
             mime="text/csv",
         )
 
-    federated = frame[frame["k"] > 1]
 
     # ------------------------------------------------------------------
-    # Figure 2 — does the vote help?
-    # ------------------------------------------------------------------
-    if not federated.empty:
-        with st.container(border=True):
-            st.markdown(
-                "**Figure 2 — What the vote adds.** For each run: the consensus minus the "
-                "mean of its hypotheses. Above 0, the vote beats the average member."
-            )
-            gain = federated.copy()
-            gain["gain"] = gain[f"consensus_{metric}"] - gain[f"mean_h_{metric}"]
-            gain["gain_best"] = gain[f"consensus_{metric}"] - gain[f"best_h_{metric}"]
-            points = (
-                alt.Chart(gain)
-                .mark_circle(size=80, color=PURPLE, opacity=0.8)
-                .encode(
-                    x=alt.X("bar:N", title=None, axis=alt.Axis(labelAngle=-30, labelLimit=200)),
-                    y=alt.Y("gain:Q", title=f"Consensus − mean H_i ({METRICS[metric]})"),
-                    tooltip=["bar", alt.Tooltip("gain:Q", format=".3f"), "seed"],
-                )
-            )
-            zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#8A93A3", strokeDash=[4, 4]).encode(y="y:Q")
-            st.altair_chart((zero + points).properties(height=280), use_container_width=True)
-            st.caption(
-                "Share of runs where the consensus is at least as good as the best single "
-                f"hypothesis: {(gain['gain_best'] >= 0).mean():.0%}."
-            )
-
-    # ------------------------------------------------------------------
-    # Figure 3 — complexity
+    # Data — how the examples are partitioned (tables, like a paper)
     # ------------------------------------------------------------------
     with st.container(border=True):
         st.markdown(
-            "**Figure 3 — Size of the learned theories.** Rules per hypothesis and body "
-            "literals per rule, for each client hypothesis and for the centralized learner."
+            "**Data — Partition of the examples.** Choose the experiments: for each one, a table "
+            "gives the positive and negative examples of the dataset, of the train and test sets, "
+            "and of each client."
         )
-        complexity_columns = st.columns(2)
-        complexity_series = {"Consensus (per hypothesis)": PURPLE, CENTRALIZED_LABEL: RED}
-        for column, key, base_key, title in (
-            (complexity_columns[0], "rules_per_hypothesis", "baseline_rules", "Rules per hypothesis"),
-            (complexity_columns[1], "body_literals", "baseline_body", "Body literals per rule"),
-        ):
-            parts = []
-            for label, source in (
-                ("Consensus (per hypothesis)", key),
-                (CENTRALIZED_LABEL, base_key),
-            ):
-                part = _aggregate(frame.dropna(subset=[source]), ["bar"], source)
-                if not part.empty:
-                    part["series"] = label
-                    parts.append(part)
-            aggregated = pd.concat(parts, ignore_index=True)
-            column.altair_chart(
-                _bars_with_error(
-                    aggregated, "bar", "series", title, complexity_series,
-                    y_title=title, height=280, unit_scale=False,
-                ),
-                use_container_width=True,
-            )
-        st.caption(
-            "Empty hypotheses count as 0 rules. A client that finds no rule in time "
-            f"votes “negative”: {int(frame['n_empty'].sum())} empty hypotheses in the "
-            "selected runs."
+        mode = st.radio(
+            "Choose by",
+            ["Datasets (automatic)", "Experiments (manual)"],
+            horizontal=True,
+            key="consensus_partition_mode",
+            help="Datasets: one table for each dataset selected in the filter at the top of "
+            "the page. Experiments: you pick the exact experiments.",
         )
+        seeds = sorted(frame["seed"].unique())
+        chosen_runs = pd.DataFrame()
 
-    # ------------------------------------------------------------------
-    # Figure 4 — number of clients
-    # ------------------------------------------------------------------
-    scaling_partitions = sorted(federated["partition"].unique()) if not federated.empty else []
-    if frame["k"].nunique() > 1:
-        with st.container(border=True):
-            st.markdown("**Figure 4 — Effect of the number of clients.** The point at 1 client is the centralized baseline.")
-            partition_choice = (
-                st.selectbox("Partition", scaling_partitions, key="consensus_scaling_partition")
-                if scaling_partitions
-                else None
-            )
-            scaling = frame[(frame["k"] == 1) | (frame["partition"] == partition_choice)].copy()
-            # Linked centralized baselines count as the k = 1 point.
-            linked = frame[frame[f"baseline_{metric}"].notna() & (frame["k"] > 1)].copy()
-            if not linked.empty:
-                linked["k"] = 1
-                linked[f"consensus_{metric}"] = linked[f"baseline_{metric}"]
-                scaling = pd.concat([scaling, linked], ignore_index=True)
-            aggregated = _aggregate(scaling, ["group", "k"], f"consensus_{metric}")
-            line = (
-                alt.Chart(aggregated)
-                .mark_line(point=True)
-                .encode(
-                    x=alt.X("k:O", title="Number of clients"),
-                    y=alt.Y("mean:Q", title=METRICS[metric], scale=alt.Scale(domain=[0, 1])),
-                    color=alt.Color("group:N", title=None, scale=alt.Scale(range=PALETTE), legend=alt.Legend(orient="bottom")),
-                    tooltip=["group", "k", alt.Tooltip("mean:Q", format=".3f"), alt.Tooltip("se:Q", format=".3f")],
-                )
-            )
-            bands = (
-                alt.Chart(aggregated)
-                .mark_errorbar()
-                .encode(x="k:O", y=alt.Y("lo:Q", title=""), y2="hi:Q", color=alt.Color("group:N", scale=alt.Scale(range=PALETTE), legend=None))
-            )
-            st.altair_chart((line + bands).properties(height=300), use_container_width=True)
-
-    # ------------------------------------------------------------------
-    # Figure 5 — IID vs label imbalance
-    # ------------------------------------------------------------------
-    if not federated.empty and federated["partition"].nunique() > 1:
-        with st.container(border=True):
-            st.markdown(
-                "**Figure 5 — IID or label imbalance.** “non_iid” here means unbalanced class "
-                "proportions between clients, not a different feature distribution."
-            )
-            aggregated = _aggregate(
-                federated.assign(k_group=federated["group"] + " (k=" + federated["k"].astype(str) + ")"),
-                ["k_group", "partition"],
-                f"consensus_{metric}",
-            )
-            st.altair_chart(
-                _bars_with_error(
-                    aggregated,
-                    "k_group",
-                    "partition",
-                    "",
-                    {"iid": NAVY, "non_iid": RED},
-                    METRICS[metric],
-                ),
-                use_container_width=True,
-            )
-
-    # ------------------------------------------------------------------
-    # Figure 6 — cost
-    # ------------------------------------------------------------------
-    with st.container(border=True):
-        st.markdown(
-            "**Figure 6 — Cost.** Learning time (clients learn in parallel, so the slowest "
-            "client sets the time) and the size of the messages exchanged."
-        )
-        cost_columns = st.columns(2)
-        time_parts = []
-        for label, source in (
-            ("Consensus (slowest client)", "time_slowest"),
-            (CENTRALIZED_LABEL, "baseline_time"),
-        ):
-            part = _aggregate(frame.dropna(subset=[source]), ["bar"], source)
-            if not part.empty:
-                part["series"] = label
-                time_parts.append(part)
-        if time_parts:
-            cost_columns[0].altair_chart(
-                _bars_with_error(
-                    pd.concat(time_parts, ignore_index=True), "bar", "series",
-                    "Learning time (s)",
-                    {"Consensus (slowest client)": TEAL, CENTRALIZED_LABEL: RED},
-                    y_title="Seconds", height=280, unit_scale=False,
-                ),
-                use_container_width=True,
-            )
-        size_frame = federated.dropna(subset=["upload_kb"]) if not federated.empty else federated
-        if not size_frame.empty:
-            long = size_frame.melt(
-                id_vars=["bar"],
-                value_vars=["upload_kb", "ensemble_kb"],
-                var_name="message",
-                value_name="kb",
-            )
-            long["message"] = long["message"].map(
-                {"upload_kb": "Hypotheses to the server", "ensemble_kb": "Ensemble to each client"}
-            )
-            by_bar = long.groupby(["bar", "message"], as_index=False)["kb"].mean()
-            cost_columns[1].altair_chart(
-                alt.Chart(by_bar)
-                .mark_bar()
-                .encode(
-                    x=alt.X("bar:N", title=None, axis=alt.Axis(labelAngle=-30, labelLimit=200)),
-                    y=alt.Y("kb:Q", title="KB"),
-                    color=alt.Color(
-                        "message:N",
-                        title=None,
-                        scale=alt.Scale(
-                            domain=["Hypotheses to the server", "Ensemble to each client"],
-                            range=[PURPLE, PINK],
-                        ),
-                        legend=alt.Legend(orient="bottom", symbolType="circle"),
-                    ),
-                    tooltip=["bar", "message", alt.Tooltip("kb:Q", format=".2f")],
-                )
-                .properties(height=280, title="Messages exchanged"),
-                use_container_width=True,
-            )
-
-    # ------------------------------------------------------------------
-    # Figure 7 — agreement between the hypotheses of one run
-    # ------------------------------------------------------------------
-    if not federated.empty:
-        with st.container(border=True):
-            st.markdown(
-                "**Figure 7 — Agreement inside one run.** Share of test examples on which two "
-                "hypotheses give the same answer. The “Truth” column is each hypothesis' accuracy: "
-                "the vote helps when the hypotheses are right on different examples."
-            )
-            options = federated.sort_values("experiment_id", ascending=False)
-            labels = {
-                int(row.experiment_id): f"#{int(row.experiment_id)} · {row.bar} · seed {row.seed}"
-                for row in options.itertuples()
-            }
-            chosen = st.selectbox(
-                "Run",
-                list(labels),
-                format_func=lambda key: labels[key],
-                key="consensus_agreement_run",
-            )
-            matrix = agreement_matrix(load_vote_traces(int(chosen)))
-            if matrix.empty:
-                st.info("No vote traces for this run.")
+        if mode.startswith("Datasets"):
+            federated_frame = frame[frame["k"] > 1]
+            if federated_frame.empty:
+                st.info("No federated run in the current selection.")
             else:
-                long = matrix.reset_index().melt(id_vars="index", var_name="other", value_name="share")
-                long = long.rename(columns={"index": "row"})
-                order = list(matrix.index)
-                heat = (
-                    alt.Chart(long)
-                    .mark_rect()
-                    .encode(
-                        x=alt.X("other:N", sort=order, title=None),
-                        y=alt.Y("row:N", sort=order, title=None),
-                        color=alt.Color("share:Q", scale=alt.Scale(domain=[0, 1], range=["#F3F4F6", PURPLE]), legend=None),
-                        tooltip=["row", "other", alt.Tooltip("share:Q", format=".2f")],
-                    )
+                option_columns = st.columns(3)
+                k_options = sorted(federated_frame["k"].unique())
+                k_choice = option_columns[0].selectbox(
+                    "Number of clients", k_options,
+                    index=k_options.index(3) if 3 in k_options else 0,
+                    key="consensus_partition_k",
                 )
-                text = (
-                    alt.Chart(long)
-                    .mark_text()
-                    .encode(
-                        x=alt.X("other:N", sort=order),
-                        y=alt.Y("row:N", sort=order),
-                        text=alt.Text("share:Q", format=".2f"),
-                        color=alt.condition(alt.datum.share > 0.55, alt.value("#FFFFFF"), alt.value("#0F1B33")),
-                    )
+                partition_options = sorted(
+                    federated_frame[federated_frame["k"] == k_choice]["partition"].unique()
                 )
-                st.altair_chart((heat + text).properties(height=260), use_container_width=True)
+                strategy_choice = option_columns[1].selectbox(
+                    "Partition", partition_options,
+                    index=partition_options.index("iid") if "iid" in partition_options else 0,
+                    format_func=lambda key: "IID" if key == "iid" else "Non-IID" if key == "non_iid" else key,
+                    key="consensus_partition_strategy",
+                )
+                matching = federated_frame[
+                    (federated_frame["k"] == k_choice)
+                    & (federated_frame["partition"] == strategy_choice)
+                ]
+                matching_seeds = sorted(matching["seed"].unique())
+                seed_pick = option_columns[2].selectbox(
+                    "Seed", matching_seeds, key="consensus_partition_seed_auto",
+                    help="The partition depends on the seed, not on the learner.",
+                )
+                # One run per dataset: the partition does not depend on the learner.
+                chosen_runs = (
+                    matching[matching["seed"] == seed_pick]
+                    .sort_values(["dataset", "benchmark_id"])
+                    .drop_duplicates("dataset")
+                    .reset_index(drop=True)
+                )
+                missing = [
+                    d for d in sorted(frame["dataset"].unique())
+                    if d not in set(chosen_runs["dataset"])
+                ]
+                if missing:
+                    st.caption(
+                        "No run with these settings yet for: " + ", ".join(missing) + "."
+                    )
+        else:
+            experiments = (
+                frame.sort_values(["dataset", "k", "partition", "benchmark_id"])
+                .drop_duplicates("benchmark_id")[["benchmark_id", "dataset", "k", "partition", "learner"]]
+            )
+            partition_labels = {
+                int(row.benchmark_id): f"#{int(row.benchmark_id)} · {row.dataset} · k={int(row.k)} · {row.partition} · {row.learner}"
+                for row in experiments.itertuples()
+            }
+            selection_key = "consensus_partition_experiments"
+            if selection_key not in st.session_state:
+                st.session_state[selection_key] = list(partition_labels)[:4]
+            # Forget selected experiments that the filters above have removed.
+            st.session_state[selection_key] = [
+                key for key in st.session_state[selection_key] if key in partition_labels
+            ]
+
+            button_columns = st.columns([1, 1, 6])
+            button_columns[0].button(
+                "Select all", key="consensus_partition_all",
+                on_click=lambda: st.session_state.__setitem__(selection_key, list(partition_labels)),
+            )
+            button_columns[1].button(
+                "Clear", key="consensus_partition_none",
+                on_click=lambda: st.session_state.__setitem__(selection_key, []),
+            )
+            chosen_ids = st.pills(
+                "Experiments (click to select or unselect)",
+                list(partition_labels),
+                selection_mode="multi",
+                format_func=lambda key: partition_labels[key],
+                key=selection_key,
+            ) or []
+            seed_choice = (
+                st.selectbox(
+                    "Seed", seeds, key="consensus_partition_seed",
+                    help="The partition depends on the seed. If an experiment has no run with "
+                    "this seed, its first run is shown.",
+                )
+                if len(seeds) > 1
+                else seeds[0]
+            )
+            shown = []
+            for benchmark_id in chosen_ids:
+                runs_of = frame[frame["benchmark_id"] == benchmark_id].sort_values("seed")
+                preferred = runs_of[runs_of["seed"] == seed_choice]
+                shown.append((preferred if not preferred.empty else runs_of).iloc[[0]])
+            if shown:
+                chosen_runs = pd.concat(shown, ignore_index=True)
+
+        if chosen_runs.empty:
+            st.info("Nothing to show: select at least one dataset or experiment.")
+        else:
+            raw = load_partitions(chosen_runs)
+
+            tables = []
+            for _, run in chosen_runs.iterrows():
+                mine = raw[raw["experiment_id"] == run["experiment_id"]]
+                clients = mine[mine["part"] != "Test (common)"].sort_values("order")
+                test = mine[mine["part"] == "Test (common)"].iloc[0]
+                train_pos, train_neg = int(clients["pos"].sum()), int(clients["neg"].sum())
+                rows = [
+                    (run["dataset"], train_pos + int(test["pos"]), train_neg + int(test["neg"])),
+                    ("Train", train_pos, train_neg),
+                    ("Test", int(test["pos"]), int(test["neg"])),
+                ] + [(r.part, int(r.pos), int(r.neg)) for r in clients.itertuples()]
+                table = pd.DataFrame(rows, columns=["Partition", "Positives", "Negatives"])
+                table["Total"] = table["Positives"] + table["Negatives"]
+                partition_name = "IID" if run["partition"] == "iid" else "Non-IID"
+                tables.append(
+                    (f"{run['dataset']} · {int(run['k'])} clients · {partition_name} · seed {int(run['seed'])} · from experiment #{int(run['benchmark_id'])}", table)
+                )
+
+            columns = st.columns(2)
+            for position, (title, table) in enumerate(tables):
+                with columns[position % 2]:
+                    st.markdown(f"**({chr(ord('a') + position % 26)}) {title}**")
+                    st.dataframe(
+                        table, hide_index=True, use_container_width=True,
+                        height=min(38 + 35 * len(table), 460),
+                    )
+
+            export = pd.concat(
+                [table.assign(Experiment=title) for title, table in tables], ignore_index=True
+            )[["Experiment", "Partition", "Positives", "Negatives", "Total"]]
+            st.download_button(
+                "Download these tables (CSV)",
+                export.to_csv(index=False).encode("utf-8"),
+                file_name="consensus_partitions.csv",
+                mime="text/csv",
+            )
+

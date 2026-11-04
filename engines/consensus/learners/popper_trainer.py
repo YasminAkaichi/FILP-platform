@@ -17,6 +17,50 @@ from popper.loop import learn_solution
 from popper.util import Settings, format_rule
 
 
+def _declare_missing_predicates_after_loading(dataset_path: Path) -> None:
+    """A client only holds the facts of ITS examples, so a body predicate of
+    the bias can have no fact at all in its background knowledge (e.g. a rare
+    clinical feature that none of its patients has). SWI-Prolog then raises
+    "Unknown procedure" when Popper tests a rule using it, instead of simply
+    failing. Right after Popper has loaded the background knowledge, every
+    body predicate of the bias that is still undefined is declared dynamic: a
+    call to it then fails, which is the correct answer.
+
+    Popper's own code is left untouched: only its Tester constructor is
+    wrapped.
+    """
+    import re
+
+    import janus_swi as janus
+    from popper import tester as popper_tester
+
+    bias_file = dataset_path / "bias.pl"
+    pattern = re.compile(r"^\s*body_pred\(\s*(\w+)\s*,\s*(\d+)\s*\)")
+    predicates = []
+
+    if bias_file.is_file():
+        for line in bias_file.read_text(encoding="utf-8").splitlines():
+            declaration = pattern.match(line)
+            if declaration:
+                predicates.append(declaration.groups())
+
+    original_init = popper_tester.Tester.__init__
+
+    def init_with_declarations(self, settings):
+        original_init(self, settings)
+        for name, arity in predicates:
+            try:
+                exists = janus.query_once(
+                    f"current_predicate({name}/{arity})"
+                ).get("truth", False)
+                if not exists:
+                    janus.query_once(f"dynamic({name}/{arity})")
+            except janus.PrologError:
+                pass
+
+    popper_tester.Tester.__init__ = init_with_declarations
+
+
 def train(
     dataset_path: Path,
     timeout: int = 600,
@@ -56,6 +100,8 @@ def train(
     # Alzheimer data). Unknown entries default to a large recall, which only
     # puts such literals last in the ordering.
     settings.recall = defaultdict(lambda: 10**9, settings.recall)
+
+    _declare_missing_predicates_after_loading(dataset_path)
 
     program, score, stats = learn_solution(settings)
 

@@ -51,6 +51,8 @@ def main() -> None:
         ex_file=str(dataset_directory / "exs.pl"),
         bk_file=str(dataset_directory / "bk.pl"),
         timeout=args.timeout,
+        # Same limit as the federated approaches (set by the launcher).
+        eval_timeout=float(__import__("os").environ.get("FILP_EVAL_TIMEOUT", "0.001")),
     )
 
     # "Stop" button: pressing it makes Popper return its best program so

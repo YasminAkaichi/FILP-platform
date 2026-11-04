@@ -16,6 +16,33 @@ from pathlib import Path
 from typing import Any
 
 
+
+def _run_with_retry(command, env, attempts: int = 3):
+    """subprocess.run, repeated when the child is killed by a signal.
+
+    A negative return code means the child died by a signal (e.g. -13,
+    SIGPIPE) before doing its job, which happens at random when a process
+    holding gRPC threads starts a child. A real Popper error (positive exit
+    code) is NOT retried: it is raised at once.
+    """
+    last_error = None
+    for _ in range(attempts):
+        try:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError as error:
+            if error.returncode >= 0:
+                raise
+            last_error = error
+    raise last_error
+
+
 class PopperConsensusLearner:
 
     def __init__(
@@ -88,7 +115,7 @@ class PopperConsensusLearner:
         )
 
         try:
-            process = subprocess.run(
+            process = _run_with_retry(
                 [
                     sys.executable,
                     "-m",
@@ -98,10 +125,7 @@ class PopperConsensusLearner:
                     "--timeout",
                     str(self.timeout),
                 ],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env,
+                env,
             )
         except subprocess.CalledProcessError as error:
             # The real cause (Popper's traceback) is in the captured stderr,
@@ -203,7 +227,7 @@ class PopperConsensusLearner:
             env = os.environ.copy()
 
             try:
-                process = subprocess.run(
+                process = _run_with_retry(
                     [
                         sys.executable,
                         "-m",
@@ -213,10 +237,7 @@ class PopperConsensusLearner:
                         "--hypothesis-file",
                         hypothesis_file,
                     ],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
+                    env,
                 )
             except subprocess.CalledProcessError as error:
                 # Show the real cause (Prolog / Python error) instead of

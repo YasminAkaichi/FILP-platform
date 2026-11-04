@@ -135,6 +135,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Shared responsive layer (13"/14" laptops, external monitors, huge screens).
+# Injected once here so it applies to every page without editing them.
+APPS_DIR = Path(__file__).resolve().parent
+if str(APPS_DIR) not in sys.path:
+    sys.path.insert(0, str(APPS_DIR))
+
+from filp_responsive import inject_responsive_css  # noqa: E402
+
+inject_responsive_css()
+
 pages = [
     st.Page("app_pages/00_Home.py", title="Home", icon=":material/home:", default=True),
     st.Page("app_pages/01_Federated_Learning.py", title="Federated Learning", icon=":material/hub:"),

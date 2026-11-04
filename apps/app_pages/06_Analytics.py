@@ -73,7 +73,15 @@ PALETTE = {
     "sidebar_border": "#22314F",
 }
 
-CHART_COLORS = ["#1B2A4C", "#1B2A4C", "#C9CED8", "#C9CED8", "#1B2A4C", "#C9CED8"]
+# Vivid colors for every chart of this page (blue, orange, green, red, purple, pink, teal).
+CHART_COLORS = ["#3E7BFA", "#F59E0B", "#2F9E63", "#E5484D", "#7C5CFC", "#E9578C", "#14B8A6"]
+APPROACH_CHART_COLORS = {
+    "consensus": "#3E7BFA",
+    "collaboration": "#F59E0B",
+    "coordination": "#2F9E63",
+    "centralized": "#E5484D",
+    "mdl_federation": "#7C5CFC",
+}
 
 STATUS_STYLE = {
     "completed": (PALETTE["success"], PALETTE["success_soft"], "✓"),
@@ -703,6 +711,25 @@ def load_all_run_results() -> pd.DataFrame:
     if df.empty:
         return df
 
+    # Consensus runs leave server_results empty: their numbers live in the
+    # consensus artifacts. Fill the same columns from there.
+    try:
+        from core.consensus_analytics import load_consensus_runs
+
+        cons = load_consensus_runs()
+    except Exception:
+        cons = pd.DataFrame()
+    if not cons.empty:
+        by_exp = cons.set_index("experiment_id")
+        is_cons = df["experiment_id"].isin(by_exp.index)
+        ids = df.loc[is_cons, "experiment_id"]
+        slow = ids.map(by_exp["time_slowest"])
+        rnd = ids.map(by_exp["round_seconds"])
+        df.loc[is_cons, "learning_time_seconds"] = slow
+        df.loc[is_cons, "total_time_seconds"] = slow + rnd.fillna(0.0)
+        df.loc[is_cons, "number_of_rounds"] = 1
+        df.loc[is_cons, "number_of_programs"] = ids.map(by_exp["rules_total"])
+
     df["popper_core_seconds"] = df["popper_time_seconds"].fillna(0.0)
     df["total_popper_time_seconds"] = df["popper_core_seconds"] + df["client_eval_wall"]
     df["federation_overhead_seconds"] = (
@@ -778,8 +805,24 @@ if benchmarks_df.empty:
     st.info("No benchmark has been recorded yet. Run one from the Experiments page first.")
     st.stop()
 
-tab_overview, tab_approach, tab_compare, tab_scalability, tab_consensus = st.tabs(
-    ["Overview", "Approach Analysis", "Compare Approaches", "Scalability", "Consensus"]
+(
+    tab_overview,
+    tab_approach,
+    tab_compare,
+    tab_scalability,
+    tab_consensus,
+    tab_coordination,
+    tab_collaboration,
+) = st.tabs(
+    [
+        "Overview",
+        "Approach Analysis",
+        "Compare Approaches",
+        "Scalability",
+        "Consensus",
+        "Coordination",
+        "Collaboration",
+    ]
 )
 
 # =======================================================================
@@ -887,7 +930,7 @@ with tab_overview:
             by_approach = (
                 benchmarks_df.groupby(["dataset", "approach"]).size().reset_index(name="count")
             )
-            approach_colors = {a: METHOD_STYLE.get(a, (PALETTE["neutral"],))[0] for a in present_approaches_all}
+            approach_colors = {a: APPROACH_CHART_COLORS.get(a, PALETTE["neutral"]) for a in present_approaches_all}
             st.altair_chart(
                 altair_stacked_bar(by_approach, "dataset", "count", "approach", approach_colors),
                 use_container_width=True,
@@ -925,7 +968,7 @@ with tab_overview:
             st.markdown('<div class="section-title" style="font-size:0.95rem;">Experiments by partition</div>', unsafe_allow_html=True)
             partition_counts = benchmarks_df["partition_strategy"].value_counts().reset_index()
             partition_counts.columns = ["Partition", "Count"]
-            partition_palette = {"iid": PALETTE["primary"], "non_iid": PALETTE["success"]}
+            partition_palette = {"iid": "#3E7BFA", "non_iid": "#F59E0B"}
             for name in partition_counts["Partition"]:
                 partition_palette.setdefault(name, PALETTE["neutral"])
             st.altair_chart(
@@ -946,7 +989,7 @@ with tab_overview:
                 runtime_chart_df = pd.DataFrame({"total_time_seconds": runtime_values})
                 runtime_hist = (
                     alt.Chart(runtime_chart_df)
-                    .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color=PALETTE["primary"])
+                    .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#3E7BFA")
                     .encode(
                         x=alt.X(
                             "total_time_seconds:Q",
@@ -992,7 +1035,7 @@ with tab_overview:
             if perf_by_ds.empty:
                 st.info(f"No data available yet for {PERFORMANCE_METRICS[perf_metric_key]}.")
             else:
-                approach_colors = {a: METHOD_STYLE.get(a, (PALETTE["neutral"],))[0] for a in present_approaches_all}
+                approach_colors = {a: APPROACH_CHART_COLORS.get(a, PALETTE["neutral"]) for a in present_approaches_all}
                 chart = (
                     alt.Chart(perf_by_ds)
                     .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
@@ -1477,7 +1520,7 @@ with tab_scalability:
                 )
                 scal_agg["std"] = scal_agg["std"].fillna(0.0)
                 present_approaches_scal = set(scal_agg["approach"].unique().tolist())
-                approach_colors = {a: METHOD_STYLE.get(a, (PALETTE["neutral"],))[0] for a in present_approaches_scal}
+                approach_colors = {a: APPROACH_CHART_COLORS.get(a, PALETTE["neutral"]) for a in present_approaches_scal}
 
                 line_chart = (
                     alt.Chart(scal_agg)
@@ -1537,3 +1580,21 @@ with tab_consensus:
     from apps.consensus_tab import render_consensus_tab
 
     render_consensus_tab()
+
+# =======================================================================
+# TAB 6 — Coordination (search and cost; no held-out test set)
+# =======================================================================
+
+with tab_coordination:
+    from apps.coordination_tab import render_coordination_tab
+
+    render_coordination_tab()
+
+# =======================================================================
+# TAB 7 — Collaboration (same study as the Coordination tab)
+# =======================================================================
+
+with tab_collaboration:
+    from apps.coordination_tab import render_collaboration_tab
+
+    render_collaboration_tab()
