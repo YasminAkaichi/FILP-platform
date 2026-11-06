@@ -454,6 +454,7 @@ APPROACHES = {
         "description": "Clients test server-generated candidates on their own noisy data; a final MaxSAT combine picks the MDL-optimal program (FedMDL).",
         "chip": "Noise-tolerant federation",
         "available": True,
+        "hidden": True,  # not shown in the wizard for now (code kept); set to False to show it again
     },
 }
 
@@ -520,9 +521,10 @@ if current_step == 1:
     st.markdown("### 1. Choose a learning approach")
     st.write("")
 
-    method_columns = st.columns(len(APPROACHES))
+    visible_approaches = {k: a for k, a in APPROACHES.items() if not a.get("hidden")}
+    method_columns = st.columns(len(visible_approaches))
 
-    for column, (key, approach) in zip(method_columns, APPROACHES.items()):
+    for column, (key, approach) in zip(method_columns, visible_approaches.items()):
         with column:
             is_selected = st.session_state["wizard_method"] == key
             accent, accent_soft = ACCENT_STYLE.get(key, (PALETTE["primary"], PALETTE["primary_soft"]))
