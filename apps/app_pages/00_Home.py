@@ -712,7 +712,11 @@ if PIPELINE_SVG_PATH.is_file():
         "<svg ", '<svg style="width:100%;height:auto;display:block;" role="img" '
         'aria-label="The FILP pipeline" ', 1
     )
-    st.markdown(pipeline_svg, unsafe_allow_html=True)
+    # capped width: on very large screens the figure stays centered instead of becoming huge
+    st.markdown(
+        '<div style="max-width:1400px;margin:0 auto;">' + pipeline_svg + "</div>",
+        unsafe_allow_html=True,
+    )
 else:
     st.warning(f"Pipeline figure not found.\n\nExpected path: `{PIPELINE_SVG_PATH}`")
 

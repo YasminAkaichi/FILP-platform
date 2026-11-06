@@ -1,4 +1,6 @@
-max_body(7).
+max_clauses(6).
+max_vars(5).
+max_body(6).
 
 head_pred(great,2).
 body_pred(x_subst,3).

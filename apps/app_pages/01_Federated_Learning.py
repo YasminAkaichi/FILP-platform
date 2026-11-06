@@ -381,7 +381,7 @@ with overview_tab:
         "distributed machine learning paradigm that allows multiple participants (clients) to "
         "collaboratively train a model without sharing their local data. Each client keeps its "
         "data locally and only shares model updates or aggregated information with a central server.</div>"
-        '<div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-top:0.9rem; align-items:stretch;">'
+        '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap:0.7rem; margin-top:0.9rem; align-items:stretch;">'
         + mini_box("lock", PALETTE["violet"], PALETTE["violet_soft"], "Data stays local", "Raw data never leaves the client.")
         + mini_box("users", PALETTE["primary"], PALETTE["primary_soft"], "Collaborative learning", "Multiple clients contribute to a shared model.")
         + mini_box("shield", PALETTE["success"], PALETTE["success_soft"], "Privacy-preserving", "Reduces the risk of exposing sensitive data.")
@@ -390,7 +390,7 @@ with overview_tab:
     )
 
     st.markdown(
-        '<div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1rem; align-items:stretch;">'
+        '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap:1rem; align-items:stretch;">'
         + what_html
         + glance_html
         + "</div>",
