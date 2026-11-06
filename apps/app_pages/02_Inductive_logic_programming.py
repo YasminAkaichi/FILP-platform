@@ -31,7 +31,7 @@ DATASETS_DIRECTORY = PROJECT_ROOT / "datasets"
 
 st.set_page_config(
     page_title="Inductive logic programming | FILP",
-    page_icon=":material/psychology:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 
@@ -984,8 +984,17 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-overview_tab, examples_tab, language_bias_tab, try_learn_tab, custom_ilp_tab = st.tabs(
-    ["Overview", "Examples", "Language bias", "Try & Learn", "Custom ILP"]
+(
+    overview_tab,
+    simple_words_tab,
+    examples_tab,
+    language_bias_tab,
+    asp_tab,
+    try_learn_tab,
+    custom_ilp_tab,
+    applications_tab,
+) = st.tabs(
+    ["Overview", "In simple words", "Examples", "Language bias", "ASP", "Learning", "Custom ILP", "ILP applications"]
 )
 
 
@@ -995,6 +1004,8 @@ overview_tab, examples_tab, language_bias_tab, try_learn_tab, custom_ilp_tab = s
 # =======================================================================
 
 with overview_tab:
+    from apps.ilp_simple_words import render_ilp_venn_background
+
     # --- Section 1: What is ILP? + a simple worked example ---------------
 
     intro_col, example_col = st.columns([1, 1])
@@ -1009,7 +1020,7 @@ with overview_tab:
                 unsafe_allow_html=True,
             )
 
-            whatis_points_col, whatis_venn_col = st.columns([1.8, 1])
+            whatis_points_col = st.container()
 
             with whatis_points_col:
                 st.markdown(
@@ -1036,96 +1047,11 @@ with overview_tab:
                     unsafe_allow_html=True,
                 )
 
-            with whatis_venn_col:
-                VENN_BLUE = PALETTE["primary"]
-                VENN_GREEN = PALETTE["success"]
-                VENN_PURPLE = PALETTE["progol"]
-                venn_svg = f"""<svg viewBox="0 0 300 290" style="width:100%; height:auto; max-width:300px; display:block; margin:0 auto;">
-<defs><clipPath id="vennLensClip"><circle cx="195" cy="115" r="75"/></clipPath></defs>
-<circle cx="105" cy="115" r="75" fill="{VENN_BLUE}" fill-opacity="0.30"/>
-<circle cx="195" cy="115" r="75" fill="{VENN_GREEN}" fill-opacity="0.30"/>
-<circle cx="105" cy="115" r="75" fill="{VENN_PURPLE}" fill-opacity="0.55" clip-path="url(#vennLensClip)"/>
-<text x="70" y="95" text-anchor="middle" font-size="15" font-weight="700" fill="{PALETTE["text"]}"><tspan x="70" dy="0">Machine</tspan><tspan x="70" dy="18">Learning</tspan></text>
-<text x="230" y="95" text-anchor="middle" font-size="15" font-weight="700" fill="{PALETTE["text"]}"><tspan x="230" dy="0">Logic</tspan><tspan x="230" dy="18">Programming</tspan></text>
-<text x="150" y="121" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">ILP</text>
-<line x1="150" y1="195" x2="150" y2="216" stroke="{PALETTE["text_muted"]}" stroke-width="2"/>
-<polygon points="141,216 159,216 150,228" fill="{PALETTE["text_muted"]}"/>
-<rect x="15" y="240" width="270" height="36" rx="18" fill="{PALETTE["progol_soft"]}" stroke="#E5E7EB"/>
-<text x="150" y="263" text-anchor="middle" font-size="14" font-weight="700" fill="{PALETTE["progol"]}">Interpretable logic programs</text>
-</svg>"""
-                st.markdown(
-                    f'<div style="margin-top:-1.2rem; max-width:100%; overflow:hidden;">{venn_svg}</div>',
-                    unsafe_allow_html=True,
-                )
-
     with example_col:
-        with st.container(key="ovcard_example"):
-            st.markdown('<div class="ov-card-title">A simple ILP example</div>', unsafe_allow_html=True)
-            st.markdown(
-                '<div class="ov-card-sub">Learning to predict <code>is_malignant</code> from breast mass '
-                'findings, real rule mined on mammography biopsy data.</div>',
-                unsafe_allow_html=True,
-            )
-
-            ex_row1_a, ex_row1_b = st.columns(2)
-            with ex_row1_a:
-                st.markdown(
-                    f'<div style="min-height:105px; box-sizing:border-box;">'
-                    + render_example_box(
-                        "Positive examples  E⁺", PALETTE["success"], PALETTE["success_soft"], "#C9CED8",
-                        "pos(is_malignant(case1)).\npos(is_malignant(case3)).",
-                    )
-                    + "</div>",
-                    unsafe_allow_html=True,
-                )
-            with ex_row1_b:
-                st.markdown(
-                    f'<div style="min-height:105px; box-sizing:border-box;">'
-                    + render_example_box(
-                        "Negative examples  E⁻", PALETTE["error"], PALETTE["error_soft"], "#E5E7EB",
-                        "neg(is_malignant(case2)).\nneg(is_malignant(case4)).",
-                    )
-                    + "</div>",
-                    unsafe_allow_html=True,
-                )
-
-            st.write("")
-            ex_row2_a, ex_row2_arrow, ex_row2_b = st.columns([0.6, 0.4, 0.7])
-            with ex_row2_a:
-                st.markdown(
-                    f'<div style="min-height:130px; box-sizing:border-box;">'
-                    + render_example_box(
-                        "Background knowledge  B", PALETTE["primary"], PALETTE["primary_soft"], "#E5E7EB",
-                        "shape(case1,'Irregular').\nmargins(case1,'Spiculated').\n"
-                        "shape(case2,'Round').",
-                    )
-                    + "</div>",
-                    unsafe_allow_html=True,
-                )
-            with ex_row2_arrow:
-                st.markdown(
-                    f'<div style="min-height:130px; display:flex; flex-direction:column; align-items:center; '
-                    f'justify-content:center; gap:6px; color:{PALETTE["text_muted"]}; font-size:0.85rem; font-weight:600; text-align:center;">'
-                    f'<span>ILP<br/>learning</span>{svg_icon("arrow_right", PALETTE["text_muted"], 32, 2.2)}</div>',
-                    unsafe_allow_html=True,
-                )
-            with ex_row2_b:
-                st.markdown(
-                    f'<div style="min-height:130px; box-sizing:border-box;">'
-                    + render_example_box(
-                        "Learned hypothesis  H", PALETTE["progol"], PALETTE["progol_soft"], "#E5E7EB",
-                        "is_malignant(A) :-\n    shape(A,'Irregular'),\n    margins(A,'Spiculated').",
-                    )
-                    + "</div>",
-                    unsafe_allow_html=True,
-                )
-
-            st.markdown(
-                f'<div style="font-size:0.82rem; color:{PALETTE["text_muted"]}; margin-top:10px;">'
-                "Source: Ferreira, Dutra, "
-                "Salvini &amp; Burnside, <i>\"Interpretable Models to Predict Breast Cancer\"</i>, IEEE BIBM 2016.</div>",
-                unsafe_allow_html=True,
-            )
+        # The drawing is the background of this card: it takes the height of the
+        # "What is ILP?" card next to it instead of setting the row height.
+        with st.container(key="ovcard_venn"):
+            render_ilp_venn_background("ovcard_venn")
 
     st.write("")
 
@@ -1312,6 +1238,17 @@ with overview_tab:
                 + render_why_row("share", PALETTE["progol"], PALETTE["progol_soft"], "Useful in many real-world domains (bioinformatics, medicine, knowledge graphs, etc.)"),
                 unsafe_allow_html=True,
             )
+
+
+# =======================================================================
+# IN SIMPLE WORDS TAB — a light, story-style introduction to ILP
+# (apps/ilp_simple_words.py), next to the formal Overview tab.
+# =======================================================================
+
+with simple_words_tab:
+    from apps.ilp_simple_words import render_simple_words
+
+    render_simple_words()
 
 
 # =======================================================================
@@ -1638,6 +1575,16 @@ with language_bias_tab:
 
 
 # =======================================================================
+# ASP TAB — Answer Set Programming in simple words (apps/asp_in_simple_words.py)
+# =======================================================================
+
+with asp_tab:
+    from apps.asp_in_simple_words import render_asp
+
+    render_asp()
+
+
+# =======================================================================
 # TRY & LEARN TAB — pick a system + dataset, preview a run (demo)
 # =======================================================================
 
@@ -1656,13 +1603,15 @@ with try_learn_tab:
         st.markdown("**1. Choose an ILP system**")
         tl_system = st.radio(
             "ILP system",
-            options=["Popper", "Andante", "MaxSynth (MDL)"],
+            options=["Popper", "Popper 4", "Andante", "MaxSynth (MDL)"],
             horizontal=True,
             label_visibility="collapsed",
             key="try_learn_system",
         )
         if tl_system == "Popper":
-            st.caption("Constraint-driven search over ASP, guided by `bias.pl`. Runs live here as a single, non-federated (**centralized**) Popper 1.1.0 job — the same engine behind every approach on this platform, without the federation layer.")
+            st.caption("Constraint-driven search over ASP, guided by `bias.pl`. Runs live here as a single, non-federated (**centralized**) Popper 1.1.0 job — the same engine behind the Coordination and Collaboration approaches, without the federation layer.")
+        elif tl_system == "Popper 4":
+            st.caption("The current Popper (4.x): the same `bias.pl`, `bk.pl` and `exs.pl` format, with a more advanced search (it also combines programs by the examples they cover). Runs live here as a single, non-federated job — the version used by the local learners of Learning by Consensus.")
         elif tl_system == "Andante":
             st.caption("Progol-style inverse-entailment search guided by mode declarations. Runs live here via Andante — the same local learner already used by Learning by Consensus.")
         else:
@@ -1740,6 +1689,8 @@ with try_learn_tab:
             tl_learner = "andante"
         elif tl_system == "MaxSynth (MDL)":
             tl_learner = "mdl"
+        elif tl_system == "Popper 4":
+            tl_learner = "popper-v4"
         else:
             tl_learner = "popper"
 
@@ -1902,7 +1853,7 @@ with try_learn_tab:
                         _tl_result_system = stored_result.get("system", "Popper")
                         _tl_result_count_label = (
                             f"({stored_result.get('number_of_programs') or 0} programs tested)"
-                            if _tl_result_system == "Popper"
+                            if _tl_result_system in ("Popper", "Popper 4")
                             else f"({stored_result.get('number_of_programs') or 0} clause(s) learned)"
                         )
                         if stored_result["hypotheses"]:
@@ -2283,7 +2234,7 @@ with custom_ilp_tab:
 
                 st.markdown('<div class="section-title">Learn from this data</div>', unsafe_allow_html=True)
                 st.markdown(
-                    '<div class="section-caption">Runs for real, right here — the same centralized runner Try & Learn uses</div>',
+                    '<div class="section-caption">Runs for real, right here — the same centralized runner the Learning tab uses</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -2291,7 +2242,7 @@ with custom_ilp_tab:
                 with learn_col_1:
                     custom_system = st.radio(
                         "System",
-                        options=["Popper", "Andante", "MaxSynth (MDL)"],
+                        options=["Popper", "Popper 4", "Andante", "MaxSynth (MDL)"],
                         horizontal=True,
                         key="custom_ilp_system",
                     )
@@ -2331,6 +2282,8 @@ with custom_ilp_tab:
                         custom_learner = "andante"
                     elif custom_system == "MaxSynth (MDL)":
                         custom_learner = "mdl"
+                    elif custom_system == "Popper 4":
+                        custom_learner = "popper-v4"
                     else:
                         custom_learner = "popper"
 
@@ -2550,3 +2503,98 @@ st.markdown(
     '<div style="margin-top:auto; padding-top:1.2rem; border-top:1px solid #E5E7EB; color:#5B6472; font-size:0.85rem;">© Yasmine Akaichi · FILP Platform</div>',
     unsafe_allow_html=True,
 )
+
+
+# =======================================================================
+# ILP APPLICATIONS TAB — where ILP is used, with a worked example
+# =======================================================================
+
+with applications_tab:
+    st.markdown(
+        '<div class="ov-card-title" style="font-size:1.35rem;">ILP applications</div>'
+        '<div class="ov-card-sub" style="white-space:normal;">ILP is used where the data are few, the '
+        "knowledge of the field matters, and every decision must be explained.</div>",
+        unsafe_allow_html=True,
+    )
+
+    application_cards = [
+        ("ovcard_app_drugs", "Drug design", "Which molecules are active, and why: the learned rules describe the chemical structure behind the activity."),
+        ("ovcard_app_biology", "Biology", "Understanding genes and proteins from relational data about their structure and interactions."),
+        ("ovcard_app_synthesis", "Program synthesis", "Writing a program from a handful of input/output examples."),
+        ("ovcard_app_xai", "Explainable AI", "Whenever each decision must be justified: the model is a readable rule, not a black box."),
+    ]
+    for column, (key, title, text) in zip(st.columns(4), application_cards):
+        with column:
+            with st.container(key=key, height="stretch"):
+                st.markdown(f'<div class="ov-card-title">{title}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="ov-card-sub" style="white-space:normal;">{text}</div>', unsafe_allow_html=True)
+
+    st.write("")
+
+    with st.container(key="ovcard_example"):
+        st.markdown('<div class="ov-card-title" style="margin-top:14px;">Example: breast cancer diagnosis</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ov-card-sub">Learning to predict <code>is_malignant</code> from breast mass '
+            'findings, real rule mined on mammography biopsy data.</div>',
+            unsafe_allow_html=True,
+        )
+
+        ex_row1_a, ex_row1_b = st.columns(2)
+        with ex_row1_a:
+            st.markdown(
+                f'<div style="min-height:105px; box-sizing:border-box;">'
+                + render_example_box(
+                    "Positive examples  E⁺", PALETTE["success"], PALETTE["success_soft"], "#C9CED8",
+                    "pos(is_malignant(case1)).\npos(is_malignant(case3)).",
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+        with ex_row1_b:
+            st.markdown(
+                f'<div style="min-height:105px; box-sizing:border-box;">'
+                + render_example_box(
+                    "Negative examples  E⁻", PALETTE["error"], PALETTE["error_soft"], "#E5E7EB",
+                    "neg(is_malignant(case2)).\nneg(is_malignant(case4)).",
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
+        st.write("")
+        ex_row2_a, ex_row2_arrow, ex_row2_b = st.columns([0.6, 0.4, 0.7])
+        with ex_row2_a:
+            st.markdown(
+                f'<div style="min-height:130px; box-sizing:border-box;">'
+                + render_example_box(
+                    "Background knowledge  B", PALETTE["primary"], PALETTE["primary_soft"], "#E5E7EB",
+                    "shape(case1,'Irregular').\nmargins(case1,'Spiculated').\n"
+                    "shape(case2,'Round').",
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+        with ex_row2_arrow:
+            st.markdown(
+                f'<div style="min-height:130px; display:flex; flex-direction:column; align-items:center; '
+                f'justify-content:center; gap:6px; color:{PALETTE["text_muted"]}; font-size:0.85rem; font-weight:600; text-align:center;">'
+                f'<span>ILP<br/>learning</span>{svg_icon("arrow_right", PALETTE["text_muted"], 32, 2.2)}</div>',
+                unsafe_allow_html=True,
+            )
+        with ex_row2_b:
+            st.markdown(
+                f'<div style="min-height:130px; box-sizing:border-box;">'
+                + render_example_box(
+                    "Learned hypothesis  H", PALETTE["progol"], PALETTE["progol_soft"], "#E5E7EB",
+                    "is_malignant(A) :-\n    shape(A,'Irregular'),\n    margins(A,'Spiculated').",
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(
+            f'<div style="font-size:0.82rem; color:{PALETTE["text_muted"]}; margin-top:10px;">'
+            "Source: Ferreira, Dutra, "
+            "Salvini &amp; Burnside, <i>\"Interpretable Models to Predict Breast Cancer\"</i>, IEEE BIBM 2016.</div>",
+            unsafe_allow_html=True,
+        )

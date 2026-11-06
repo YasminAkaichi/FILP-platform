@@ -210,6 +210,7 @@ def coordination_benchmarks(runs: pd.DataFrame, approach: str = "coordination") 
             learner=("learner", "first"),
             k=("k", "first"),
             partition=("partition", "first"),
+            seed=("seed", "first"),
             n_runs=("experiment_id", "nunique"),
         )
         .reset_index()
@@ -329,7 +330,7 @@ def side_by_side_table(frame: pd.DataFrame, approach: str) -> pd.DataFrame:
             {
                 "Benchmark": f"#{int(benchmark_id)}",
                 "Dataset": first["dataset"],
-                "Setting": f"k={int(first['k'])}, {_partition_name(first['partition']).lower()}",
+                "Setting": f"k={int(first['k'])}, {_partition_name(first['partition']).lower()}, seed {int(first['seed'])}",
                 "Runs": len(group),
                 f"Solution found ({name})": rate(group["solution_found"]),
                 "Solution found (centralized)": rate(baseline["solution_found"]),

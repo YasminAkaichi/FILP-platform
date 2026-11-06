@@ -1,7 +1,7 @@
 """
 Batch-convert every eligible Popper-format dataset under datasets/ into
 a native Andante .pl file under datasets/andante/, so it can be picked
-up by the Andante dropdown in Try & Learn (see
+up by the Andante dropdown in the Learning tab (see
 apps/app_pages/02_Inductive_logic_programming.py::get_available_andante_datasets,
 which lists every *.pl file directly inside datasets/andante/).
 

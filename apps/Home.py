@@ -148,8 +148,7 @@ inject_responsive_css()
 pages = [
     st.Page("app_pages/00_Home.py", title="Home", icon=":material/home:", default=True),
     st.Page("app_pages/01_Federated_Learning.py", title="Federated Learning", icon=":material/hub:"),
-    st.Page("app_pages/02_Inductive_logic_programming.py", title="ILP", icon=":material/psychology:"),
-    st.Page("app_pages/03_FILP_approaches.py", title="FILP approaches", icon=":material/compare_arrows:"),
+    st.Page("app_pages/02_Inductive_logic_programming.py", title="ILP", icon=":material/psychology:"),    st.Page("app_pages/03_FILP_approaches.py", title="FILP approaches", icon=":material/compare_arrows:"),
     st.Page("app_pages/04_Simulation.py", title="Simulation", icon=":material/play_circle:"),
     st.Page("app_pages/05_Experiments.py", title="Experiments", icon=":material/science:"),
     st.Page("app_pages/06_Analytics.py", title="Analytics", icon=":material/monitoring:"),

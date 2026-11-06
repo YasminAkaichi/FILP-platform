@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 900" font-family="Inter, 'Source Sans 3', 'Segoe UI', Helvetica, Arial, sans-serif">
+<defs>
+<marker id="head-11026D" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 Z" fill="#11026D"/></marker>
+<marker id="head-7C5CC4" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 Z" fill="#7C5CC4"/></marker>
+<marker id="head-2F6FBF" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 Z" fill="#2F6FBF"/></marker>
+<marker id="head-C0613F" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9 Z" fill="#C0613F"/></marker>
+</defs>
+<rect x="0" y="0" width="1800" height="900" rx="0" fill="#FFFFFF" stroke="none" stroke-width="2"/>
+<rect x="15" y="15" width="1770" height="120" rx="22" fill="#F3F4F8" stroke="none" stroke-width="2"/>
+<text x="48" y="78" font-size="52" font-weight="800" fill="#11026D" text-anchor="start">FILP pipeline</text>
+<text x="48" y="116" font-size="23" font-weight="400" fill="#5B6472" text-anchor="start">From a dataset to interpretable hypotheses. The clients are simulated on one machine, and no example leaves a client.</text>
+<rect x="30" y="150" width="250" height="700" rx="20" fill="#EEF1FA" stroke="none" stroke-width="2"/>
+<path d="M30 210 V170 Q30 150 50 150 H260 Q280 150 280 170 V210 Z" fill="#11026D"/>
+<circle cx="60" cy="180" r="15" fill="#F0EADD"/>
+<text x="60" y="187" font-size="19" font-weight="700" fill="#11026D" text-anchor="middle">1</text>
+<text x="86" y="188" font-size="24" font-weight="700" fill="#F0EADD" text-anchor="start">Datasets</text>
+<text x="52" y="246.0" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">Pick a task, or</text>
+<text x="52" y="271.08" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">bring your own.</text>
+<path d="M123.0 310.0 V380.0 A32.0 11 0 0 0 187.0 380.0 V310.0" fill="#11026D"/>
+<ellipse cx="155.0" cy="310.0" rx="32.0" ry="11" fill="#11026D"/>
+<path d="M123.0 333.3333333333333 A32.0 11 0 0 0 187.0 333.3333333333333" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<path d="M123.0 356.6666666666667 A32.0 11 0 0 0 187.0 356.6666666666667" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<text x="52" y="430" font-size="21" font-weight="700" fill="#11026D" text-anchor="start">Built-in</text>
+<circle cx="58" cy="455" r="4.2" fill="#11026D"/>
+<text x="74" y="462.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Zendo1</text>
+<circle cx="58" cy="490.4" r="4.2" fill="#11026D"/>
+<text x="74" y="497.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Trains1000</text>
+<circle cx="58" cy="525.8" r="4.2" fill="#11026D"/>
+<text x="74" y="532.8" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">IGGP-RPS</text>
+<circle cx="58" cy="561.1999999999999" r="4.2" fill="#11026D"/>
+<text x="74" y="568.1999999999999" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Synthesis-sorted</text>
+<circle cx="58" cy="596.5999999999999" r="4.2" fill="#11026D"/>
+<text x="74" y="603.5999999999999" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Breast cancer</text>
+<circle cx="58" cy="631.9999999999999" r="4.2" fill="#11026D"/>
+<text x="74" y="638.9999999999999" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Intubation</text>
+<text x="52" y="696.3999999999999" font-size="21" font-weight="700" fill="#11026D" text-anchor="start">Your own data</text>
+<text x="52" y="726.3999999999999" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">A table (CSV) turned</text>
+<text x="52" y="751.4799999999999" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">into an ILP task</text>
+<text x="52" y="776.5599999999998" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">(Custom ILP).</text>
+<rect x="300" y="150" width="270" height="700" rx="20" fill="#EEF1FA" stroke="none" stroke-width="2"/>
+<path d="M300 210 V170 Q300 150 320 150 H550 Q570 150 570 170 V210 Z" fill="#11026D"/>
+<circle cx="330" cy="180" r="15" fill="#F0EADD"/>
+<text x="330" y="187" font-size="19" font-weight="700" fill="#11026D" text-anchor="middle">2</text>
+<text x="356" y="188" font-size="24" font-weight="700" fill="#F0EADD" text-anchor="start">Data preparation</text>
+<text x="322" y="246.0" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">The data are split</text>
+<text x="322" y="271.08" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">into private shares.</text>
+<path d="M348.0 319.0 V371.0 A22.0 11 0 0 0 392.0 371.0 V319.0" fill="#7C5CC4"/>
+<ellipse cx="370" cy="319.0" rx="22.0" ry="11" fill="#7C5CC4"/>
+<path d="M348.0 336.3333333333333 A22.0 11 0 0 0 392.0 336.3333333333333" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<path d="M348.0 353.6666666666667 A22.0 11 0 0 0 392.0 353.6666666666667" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<path d="M414.0 319.0 V371.0 A22.0 11 0 0 0 458.0 371.0 V319.0" fill="#2F6FBF"/>
+<ellipse cx="436" cy="319.0" rx="22.0" ry="11" fill="#2F6FBF"/>
+<path d="M414.0 336.3333333333333 A22.0 11 0 0 0 458.0 336.3333333333333" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<path d="M414.0 353.6666666666667 A22.0 11 0 0 0 458.0 353.6666666666667" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<path d="M480.0 319.0 V371.0 A22.0 11 0 0 0 524.0 371.0 V319.0" fill="#C0613F"/>
+<ellipse cx="502" cy="319.0" rx="22.0" ry="11" fill="#C0613F"/>
+<path d="M480.0 336.3333333333333 A22.0 11 0 0 0 524.0 336.3333333333333" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<path d="M480.0 353.6666666666667 A22.0 11 0 0 0 524.0 353.6666666666667" fill="none" stroke="#F0EADD" stroke-width="3"/>
+<circle cx="328" cy="423" r="4.2" fill="#11026D"/>
+<text x="344" y="430.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">The examples are</text>
+<text x="344" y="456.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">divided among K</text>
+<text x="344" y="482.8" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">clients</text>
+<circle cx="328" cy="511.20000000000005" r="4.2" fill="#11026D"/>
+<text x="344" y="518.2" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">IID or non-IID</text>
+<text x="344" y="544.6" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">partitions</text>
+<circle cx="328" cy="573.0" r="4.2" fill="#11026D"/>
+<text x="344" y="580.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">A seed makes it</text>
+<text x="344" y="606.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">reproducible</text>
+<circle cx="328" cy="634.8" r="4.2" fill="#11026D"/>
+<text x="344" y="641.8" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Consensus only: a</text>
+<text x="344" y="668.1999999999999" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">train / test split</text>
+<rect x="318" y="715.5999999999999" width="234" height="64" rx="14" fill="#FFFFFF" stroke="#D6DAE6" stroke-width="1.5"/>
+<text x="332" y="743.5999999999999" font-size="18" font-weight="400" fill="#5B6472" text-anchor="start">Simulated clients on</text>
+<text x="332" y="767.3599999999999" font-size="18" font-weight="400" fill="#5B6472" text-anchor="start">the local machine</text>
+<rect x="590" y="150" width="770" height="700" rx="20" fill="#F5F3FB" stroke="none" stroke-width="2"/>
+<path d="M590 210 V170 Q590 150 610 150 H1340 Q1360 150 1360 170 V210 Z" fill="#11026D"/>
+<circle cx="620" cy="180" r="15" fill="#F0EADD"/>
+<text x="620" y="187" font-size="19" font-weight="700" fill="#11026D" text-anchor="middle">3</text>
+<text x="646" y="188" font-size="24" font-weight="700" fill="#F0EADD" text-anchor="start">Federated ILP</text>
+<text x="775.0" y="250" font-size="20" font-weight="700" fill="#5B6472" text-anchor="middle">Clients (private data)</text>
+<text x="1175.0" y="250" font-size="20" font-weight="700" fill="#5B6472" text-anchor="middle">Server</text>
+<rect x="600" y="266" width="750" height="180" rx="16" fill="#EDE8F8" stroke="none" stroke-width="2"/>
+<rect x="600" y="266" width="9" height="180" rx="4" fill="#7C5CC4"/>
+<text x="624" y="300" font-size="22" font-weight="700" fill="#7C5CC4" text-anchor="start">Learning by Consensus</text>
+<text x="1332" y="300" font-size="18" font-weight="500" fill="#5B6472" text-anchor="end">Popper 4 or Andante</text>
+<rect x="618" y="318" width="314" height="102" rx="14" fill="#FFFFFF" stroke="#7C5CC4" stroke-width="2"/>
+<text x="636" y="356.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Each client learns its own</text>
+<text x="636" y="382.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">hypothesis Hᵢ</text>
+<rect x="1018" y="318" width="314" height="102" rx="14" fill="#FFFFFF" stroke="#7C5CC4" stroke-width="2"/>
+<text x="1036" y="356.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Collects the Hᵢ and takes</text>
+<text x="1036" y="382.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">the majority vote</text>
+<line x1="938" y1="374" x2="1012" y2="374" stroke="#7C5CC4" stroke-width="3.2" stroke-linecap="round" marker-end="url(#head-7C5CC4)"/>
+<text x="975.0" y="360" font-size="17" font-weight="600" fill="#7C5CC4" text-anchor="middle">Hᵢ</text>
+<rect x="600" y="458" width="750" height="180" rx="16" fill="#E3EDF9" stroke="none" stroke-width="2"/>
+<rect x="600" y="458" width="9" height="180" rx="4" fill="#2F6FBF"/>
+<text x="624" y="492" font-size="22" font-weight="700" fill="#2F6FBF" text-anchor="start">Learning by Coordination</text>
+<text x="1332" y="492" font-size="18" font-weight="500" fill="#5B6472" text-anchor="end">Bach store · Popper 1.1.0</text>
+<rect x="618" y="510" width="314" height="102" rx="14" fill="#FFFFFF" stroke="#2F6FBF" stroke-width="2"/>
+<text x="636" y="548.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Test the candidate on</text>
+<text x="636" y="574.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">local data</text>
+<rect x="1018" y="510" width="314" height="102" rx="14" fill="#FFFFFF" stroke="#2F6FBF" stroke-width="2"/>
+<text x="1036" y="548.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Generates a candidate,</text>
+<text x="1036" y="574.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">aggregates the outcomes,</text>
+<text x="1036" y="600.8" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">adds constraints</text>
+<line x1="1012" y1="548" x2="938" y2="548" stroke="#2F6FBF" stroke-width="3.2" stroke-linecap="round" marker-end="url(#head-2F6FBF)"/>
+<text x="975.0" y="536" font-size="15" font-weight="500" fill="#2F6FBF" text-anchor="middle">candidate</text>
+<line x1="938" y1="584" x2="1012" y2="584" stroke="#2F6FBF" stroke-width="3.2" stroke-linecap="round" marker-end="url(#head-2F6FBF)"/>
+<text x="975.0" y="608" font-size="15" font-weight="500" fill="#2F6FBF" text-anchor="middle">outcome</text>
+<text x="981.0" y="629" font-size="16" font-weight="500" fill="#2F6FBF" text-anchor="middle" font-style="italic">repeated round after round, until a solution is found</text>
+<rect x="600" y="650" width="750" height="180" rx="16" fill="#F9E9E2" stroke="none" stroke-width="2"/>
+<rect x="600" y="650" width="9" height="180" rx="4" fill="#C0613F"/>
+<text x="624" y="684" font-size="22" font-weight="700" fill="#C0613F" text-anchor="start">Learning by Collaboration</text>
+<text x="1332" y="684" font-size="18" font-weight="500" fill="#5B6472" text-anchor="end">Flower · Popper 1.1.0</text>
+<rect x="618" y="702" width="314" height="102" rx="14" fill="#FFFFFF" stroke="#C0613F" stroke-width="2"/>
+<text x="636" y="740.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Test the candidate on</text>
+<text x="636" y="766.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">local data</text>
+<rect x="1018" y="702" width="314" height="102" rx="14" fill="#FFFFFF" stroke="#C0613F" stroke-width="2"/>
+<text x="1036" y="740.0" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">Generates a candidate,</text>
+<text x="1036" y="766.4" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">aggregates the outcomes,</text>
+<text x="1036" y="792.8" font-size="20" font-weight="400" fill="#1F2430" text-anchor="start">adds constraints</text>
+<line x1="1012" y1="740" x2="938" y2="740" stroke="#C0613F" stroke-width="3.2" stroke-linecap="round" marker-end="url(#head-C0613F)"/>
+<text x="975.0" y="728" font-size="15" font-weight="500" fill="#C0613F" text-anchor="middle">candidate</text>
+<line x1="938" y1="776" x2="1012" y2="776" stroke="#C0613F" stroke-width="3.2" stroke-linecap="round" marker-end="url(#head-C0613F)"/>
+<text x="975.0" y="800" font-size="15" font-weight="500" fill="#C0613F" text-anchor="middle">outcome</text>
+<text x="981.0" y="821" font-size="16" font-weight="500" fill="#C0613F" text-anchor="middle" font-style="italic">repeated round after round, until a solution is found</text>
+<rect x="1380" y="150" width="200" height="700" rx="20" fill="#EEF1FA" stroke="none" stroke-width="2"/>
+<path d="M1380 210 V170 Q1380 150 1400 150 H1560 Q1580 150 1580 170 V210 Z" fill="#11026D"/>
+<circle cx="1410" cy="180" r="15" fill="#F0EADD"/>
+<text x="1410" y="187" font-size="19" font-weight="700" fill="#11026D" text-anchor="middle">4</text>
+<text x="1436" y="188" font-size="24" font-weight="700" fill="#F0EADD" text-anchor="start">Evaluation</text>
+<text x="1402" y="246.0" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">The same</text>
+<text x="1402" y="271.08" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">questions for</text>
+<text x="1402" y="296.16" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">every approach.</text>
+<circle cx="1406" cy="443" r="4.2" fill="#11026D"/>
+<text x="1422" y="450.0" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">Accuracy and</text>
+<text x="1422" y="475.08" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">MCC</text>
+<text x="1422" y="500.16" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">(Consensus)</text>
+<circle cx="1406" cy="527.24" r="4.2" fill="#11026D"/>
+<text x="1422" y="534.24" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">Same programs</text>
+<text x="1422" y="559.32" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">as a</text>
+<text x="1422" y="584.4" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">centralized</text>
+<text x="1422" y="609.48" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">search (client</text>
+<text x="1422" y="634.5600000000001" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">0)</text>
+<circle cx="1406" cy="661.64" r="4.2" fill="#11026D"/>
+<text x="1422" y="668.64" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">Centralized</text>
+<text x="1422" y="693.72" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">Popper as a</text>
+<text x="1422" y="718.8" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">baseline</text>
+<circle cx="1406" cy="745.88" r="4.2" fill="#11026D"/>
+<text x="1422" y="752.88" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">Learning time</text>
+<text x="1422" y="777.96" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">and messages</text>
+<rect x="1446.0" y="374" width="18" height="26" rx="3" fill="#11026D"/>
+<rect x="1472.0" y="358" width="18" height="42" rx="3" fill="#11026D"/>
+<rect x="1498.0" y="342" width="18" height="58" rx="3" fill="#11026D"/>
+<rect x="1600" y="150" width="175" height="700" rx="20" fill="#EEF1FA" stroke="none" stroke-width="2"/>
+<path d="M1600 210 V170 Q1600 150 1620 150 H1755 Q1775 150 1775 170 V210 Z" fill="#11026D"/>
+<circle cx="1630" cy="180" r="15" fill="#F0EADD"/>
+<text x="1630" y="187" font-size="19" font-weight="700" fill="#11026D" text-anchor="middle">5</text>
+<text x="1656" y="188" font-size="24" font-weight="700" fill="#F0EADD" text-anchor="start">Results</text>
+<text x="1622" y="246.0" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">Readable by</text>
+<text x="1622" y="271.08" font-size="19" font-weight="400" fill="#5B6472" text-anchor="start">design.</text>
+<circle cx="1624" cy="443" r="4.2" fill="#11026D"/>
+<text x="1640" y="450.0" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">Hypotheses</text>
+<text x="1640" y="475.08" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">as logic</text>
+<text x="1640" y="500.16" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">programs</text>
+<circle cx="1624" cy="527.24" r="4.2" fill="#11026D"/>
+<text x="1640" y="534.24" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">The vote of</text>
+<text x="1640" y="559.32" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">every client</text>
+<circle cx="1624" cy="586.4" r="4.2" fill="#11026D"/>
+<text x="1640" y="593.4" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">One final</text>
+<text x="1640" y="618.48" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">program</text>
+<circle cx="1624" cy="645.56" r="4.2" fill="#11026D"/>
+<text x="1640" y="652.56" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">Dashboards</text>
+<text x="1640" y="677.64" font-size="19" font-weight="400" fill="#1F2430" text-anchor="start">and history</text>
+<rect x="1663.5" y="340" width="48" height="58" rx="6" fill="none" stroke="#11026D" stroke-width="4"/>
+<line x1="1675.5" y1="354" x2="1699.5" y2="354" stroke="#11026D" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="1675.5" y1="366" x2="1699.5" y2="366" stroke="#11026D" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="1675.5" y1="378" x2="1699.5" y2="378" stroke="#11026D" stroke-width="3.5" stroke-linecap="round"/>
+<path d="M288 482 L304 500 L288 518" fill="none" stroke="#11026D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M578 482 L594 500 L578 518" fill="none" stroke="#11026D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1368 482 L1384 500 L1368 518" fill="none" stroke="#11026D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1588 482 L1604 500 L1588 518" fill="none" stroke="#11026D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="15" y="862" width="1770" height="28" rx="14" fill="#F3F4F8" stroke="none" stroke-width="2"/>
+<text x="900.0" y="882" font-size="18" font-weight="500" fill="#11026D" text-anchor="middle">Only hypotheses or symbolic outcomes travel between the clients and the server: raw examples stay where they are.</text>
+</svg>

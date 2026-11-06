@@ -59,7 +59,7 @@ def get_available_datasets() -> list[str]:
 
 st.set_page_config(
     page_title="Simulation | FILP",
-    page_icon=":material/play_circle:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 

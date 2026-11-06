@@ -1729,11 +1729,13 @@ class ExperimentLauncher:
         """
         A non-federated baseline: run a single ILP learner once on the
         whole dataset — no clients, no server, no network. This is what
-        "Try & Learn" on the Inductive Logic Programming page triggers.
+        the "Learning" tab on the Inductive Logic Programming page triggers.
 
-        Three learners are supported via config.learner (the
+        Four learners are supported via config.learner (the
         "noisy_mdl" approach forces learner="mdl" from the wizard):
           - "popper" (default): Popper 1.1.0 (popper-core)
+          - "popper-v4": Popper 4 (symbolic/popper-v4), the version used by
+            Learning by Consensus
           - "andante": Andante, a Progol-style ILP system already used
             by Learning by Consensus
           - "mdl": MaxSynth / noisy-MDL (symbolic/Popper-v3), the
@@ -1756,12 +1758,15 @@ class ExperimentLauncher:
             runner_module = "engines.centralized.andante_runner"
         elif learner == "mdl":
             runner_module = "engines.centralized.mdl_runner"
+        elif learner == "popper-v4":
+            runner_module = "engines.centralized.popper4_runner"
         else:
             runner_module = "engines.centralized.runner"
 
         learner_label = {
             "andante": "Andante",
             "mdl": "MaxSynth / noisy MDL, Popper-v3",
+            "popper-v4": "Popper 4, popper-v4",
         }.get(learner, "Popper 1.1.0, popper-core")
 
         if learner == "andante":

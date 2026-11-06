@@ -44,6 +44,16 @@ div.block-container {
 }
 
 /* ------------------------------------------------------------------ */
+/* Sidebar logo: the FILP flower with its name needs more than 64px     */
+/* ------------------------------------------------------------------ */
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] img,
+section[data-testid="stSidebar"] [data-testid="stLogo"] {
+    height: 96px !important;
+    width: auto !important;
+    max-width: 100% !important;
+}
+
+/* ------------------------------------------------------------------ */
 /* Components that should never overflow their box                      */
 /* ------------------------------------------------------------------ */
 .badge {

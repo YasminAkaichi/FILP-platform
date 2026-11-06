@@ -2,7 +2,7 @@
 Centralized (non-federated) Andante run.
 
 This is the real, non-demo counterpart of the "Progol" option in
-Try & Learn: Andante is a Progol-style ILP system (mode declarations,
+the Learning tab: Andante is a Progol-style ILP system (mode declarations,
 determinations, inverse-entailment-style induction) that is already
 vendored and proven in this codebase — Learning by Consensus has used
 it as one of its two local learners since before this file existed

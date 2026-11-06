@@ -41,7 +41,7 @@ from apps.run_monitor import render_run_monitor
 
 st.set_page_config(
     page_title="Experiments | FILP",
-    page_icon=":material/science:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 

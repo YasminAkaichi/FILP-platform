@@ -35,7 +35,7 @@ ALL_APPROACHES = list(get_args(_Approach))
 
 st.set_page_config(
     page_title="Analytics | FILP",
-    page_icon=":material/monitoring:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 

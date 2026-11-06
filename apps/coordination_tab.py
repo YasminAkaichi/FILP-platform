@@ -15,6 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from apps.consensus_tab import _aggregate, _bars_with_error
+from core import thesis_tables
 from core.consensus_analytics import to_latex
 from core.coordination_analytics import (
     APPROACH_LABELS,
@@ -45,8 +46,127 @@ def _benchmark_label(row) -> str:
     partition = "IID" if row.partition == "iid" else "Non-IID" if row.partition == "non_iid" else row.partition
     return (
         f"#{int(row.benchmark_id)} · {row.dataset} · {str(row.learner).title()} · "
-        f"k={int(row.k)} · {partition} · {int(row.n_runs)} run(s)"
+        f"k={int(row.k)} · {partition} · seed {int(row.seed)} · {int(row.n_runs)} run(s)"
     )
+
+
+def _show_table(table: pd.DataFrame, key: str, caption: str, how_to_read: str, empty: str) -> None:
+    """A table with its explanation and CSV / LaTeX downloads."""
+    if table is None or table.empty:
+        st.info(empty)
+        return
+    st.dataframe(table, use_container_width=True, hide_index=True)
+    st.caption(how_to_read)
+    columns = st.columns(2)
+    columns[0].download_button(
+        "Download (CSV)", table.to_csv(index=False).encode("utf-8"),
+        file_name=f"{key}.csv", mime="text/csv", key=f"{key}_csv",
+    )
+    columns[1].download_button(
+        "Download (LaTeX)",
+        to_latex(table, caption=caption, label=f"tab:{key.replace('_', '-')}").encode("utf-8"),
+        file_name=f"{key}.tex", mime="text/plain", key=f"{key}_tex",
+    )
+
+
+def _render_thesis_tables(runs, chosen_benchmarks, approach: str, labels: dict, name: str) -> None:
+    """One tab per sub-section of the results chapter; every table is built from
+    the benchmarks selected above."""
+    selected = runs[
+        runs["benchmark_id"].isin(chosen_benchmarks) | runs["baseline_of"].isin(chosen_benchmarks)
+    ]
+    ids = list(chosen_benchmarks)
+    hybrid = hybrid_comparison_table(selected, labels, approach)
+    with st.container(border=True):
+        st.markdown(
+            f"**Tables of the results section — {name}.** One tab per sub-section. The federated search "
+            "is compared, run by run, with the search of client 0 (centralized) and with Popper on the "
+            "whole dataset; the tables use the benchmarks selected above."
+        )
+        tabs = st.tabs([
+            "Equivalence", "Learned programs", "Non-IID", "Scalability", "Learning time", "Communication",
+        ])
+
+        with tabs[0]:
+            _show_table(
+                thesis_tables.equivalence_table(selected, ids, approach, labels),
+                f"{approach}_equivalence",
+                f"Equivalence of the federated search and of the search of client 0 ({name}).",
+                "Two searches are equivalent when, at every round, they test the same program and obtain the "
+                "same outcome and the same score. “First difference” is the round of the first difference, "
+                "for each run that is not equivalent. “Same solution” compares the returned programs up to "
+                "spaces and to the order of the body literals.",
+                "Needs a federated benchmark and its client 0 (centralized) twin: tick “Hybrid evaluation” "
+                "when launching a benchmark.",
+            )
+
+        with tabs[1]:
+            _show_table(
+                thesis_tables.programs_table(selected, ids, approach, labels),
+                f"{approach}_programs",
+                f"Learned programs ({name}).",
+                "Number of rules and mean number of body literals per rule of the program returned by each search "
+                "(mean ± standard deviation over the runs).",
+                "No run with a solution in the selected benchmarks.",
+            )
+
+        with tabs[2]:
+            non_iid_ids = [
+                int(b) for b in selected[
+                    (selected["approach"] == approach) & (selected["partition"] == "non_iid")
+                ]["benchmark_id"].dropna().unique()
+            ]
+            _show_table(
+                thesis_tables.equivalence_table(selected, non_iid_ids, approach, labels),
+                f"{approach}_non_iid",
+                f"Equivalence on non-IID partitions ({name}).",
+                "Same table as “Equivalence”, restricted to the non-IID benchmarks selected above.",
+                "Select a non-IID benchmark with its client 0 (centralized) twin.",
+            )
+            divergence = thesis_tables.divergence_table(selected, ids, approach, labels)
+            if not divergence.empty:
+                st.markdown("**Where the searches part.** First round at which a federated run differs from its client 0 run.")
+                _show_table(
+                    divergence, f"{approach}_divergence", f"First divergence ({name}).",
+                    "“same program, different answer”: both searches test the same program but obtain another "
+                    "outcome or score (the aggregation or the evaluation differs). “different programs”: the "
+                    "earlier constraints already differed. “Clients” are the answers of the clients and "
+                    "“Aggregated” their aggregation; “Client 0” is the answer on the whole dataset (score in brackets).",
+                    "",
+                )
+
+        with tabs[3]:
+            _show_table(
+                thesis_tables.scalability_table(selected, ids, approach, labels),
+                f"{approach}_scalability",
+                f"Effect of the number of clients ({name}).",
+                "One row per dataset, partition and number of clients K (mean ± standard deviation over the "
+                "runs). Client evaluation is the slowest client.",
+                "No run in the selected benchmarks.",
+            )
+
+        with tabs[4]:
+            _show_table(
+                hybrid,
+                f"{approach}_learning_time",
+                f"Learning time of the federated search and of client 0 ({name}).",
+                "Learning time is the wall-clock time of the whole search. Popper core is the server's work "
+                "(generating programs, building constraints); client evaluation is the slowest client "
+                "(federated) or the only client (client 0); federation overhead is the waiting time of the "
+                "server minus the client evaluation.",
+                "No client 0 (centralized) run for the selected benchmarks.",
+            )
+
+        with tabs[5]:
+            _show_table(
+                thesis_tables.communication_table(selected, ids, approach, labels),
+                f"{approach}_communication",
+                f"Answers exchanged between the clients and the server ({name}).",
+                "Counted from the hypothesis log: for each program, every client sends one answer (outcome "
+                "and score) and, for each clause of the program, one clause-level answer (inconsistent, "
+                "totally incomplete). No example, fact or rule is sent. Sizes in bytes are not measured.",
+                "No run in the selected benchmarks.",
+            )
 
 
 def render_coordination_tab() -> None:
@@ -407,6 +527,11 @@ def render_search_tab(approach: str) -> None:
                 mime="text/csv",
                 key=f"{approach}_hybrid_csv",
             )
+
+    # ------------------------------------------------------------------
+    # Tables of the thesis, one per sub-section of the results
+    # ------------------------------------------------------------------
+    _render_thesis_tables(runs, chosen_benchmarks, approach, labels, name)
 
     # ------------------------------------------------------------------
     # Table — summary and downloads

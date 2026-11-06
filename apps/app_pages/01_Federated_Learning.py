@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 st.set_page_config(
     page_title="Federated Learning | FILP",
-    page_icon=":material/hub:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 
@@ -202,8 +202,9 @@ def inject_style() -> None:
             justify-content: center !important;
         }}
         div[class*="st-key-fl_card_glance"] img {{
-            max-height: 320px !important;
-            width: auto !important;
+            max-height: 100% !important;
+            width: 100% !important;
+            height: auto !important;
             object-fit: contain;
             display: block;
             margin: 0 auto;
@@ -354,47 +355,47 @@ def step_row(number: int, color: str, title: str, desc: str, last: bool = False)
 
 
 with overview_tab:
-    what_col, glance_col = st.columns([1.3, 1])
+    # One HTML grid for the two cards: they always have the same height, and the diagram
+    # fills its card.
+    import base64
 
-    with what_col:
-        with st.container(key="fl_card_what"):
-            st.markdown('<div class="fl-card-title">What is Federated Learning (FL)?</div>', unsafe_allow_html=True)
-            st.markdown(
-                '<div class="fl-card-text">Federated Learning (FL) is a distributed machine learning '
-                "paradigm that allows multiple participants (clients) to collaboratively train a model "
-                "without sharing their local data. Each client keeps its data locally and only shares "
-                "model updates or aggregated information with a central server.</div>",
-                unsafe_allow_html=True,
-            )
-            mb_1, mb_2 = st.columns(2)
-            with mb_1:
-                st.markdown(
-                    mini_box("lock", PALETTE["violet"], PALETTE["violet_soft"], "Data stays local", "Raw data never leaves the client."),
-                    unsafe_allow_html=True,
-                )
-                st.write("")
-                st.markdown(
-                    mini_box("shield", PALETTE["success"], PALETTE["success_soft"], "Privacy-preserving", "Reduces the risk of exposing sensitive data."),
-                    unsafe_allow_html=True,
-                )
-            with mb_2:
-                st.markdown(
-                    mini_box("users", PALETTE["primary"], PALETTE["primary_soft"], "Collaborative learning", "Multiple clients contribute to a shared model."),
-                    unsafe_allow_html=True,
-                )
-                st.write("")
-                st.markdown(
-                    mini_box("database", PALETTE["violet"], PALETTE["violet_soft"], "Global model", "The server aggregates client contributions to improve the model."),
-                    unsafe_allow_html=True,
-                )
+    FL_IMAGE_PATH = PROJECT_ROOT / "assets" / "fl.png"
+    CARD_STYLE = (
+        f'background:#FFFFFF; border:1.5px solid {PALETTE["border"]}; border-radius:16px; '
+        "padding:1.2rem 1.4rem; box-sizing:border-box;"
+    )
+    if FL_IMAGE_PATH.is_file():
+        fl_b64 = base64.b64encode(FL_IMAGE_PATH.read_bytes()).decode("ascii")
+        glance_html = (
+            f'<div style="{CARD_STYLE} display:flex; align-items:center; justify-content:center; padding:0.8rem;">'
+            f'<img src="data:image/png;base64,{fl_b64}" alt="Federated learning diagram" '
+            'style="width:100%; height:auto; max-height:100%; object-fit:contain; display:block;"/></div>'
+        )
+    else:
+        glance_html = f'<div style="{CARD_STYLE}">Diagram not found at {FL_IMAGE_PATH}.</div>'
 
-    with glance_col:
-        with st.container(key="fl_card_glance"):
-            FL_IMAGE_PATH = PROJECT_ROOT / "assets" / "fl.png"
-            if FL_IMAGE_PATH.is_file():
-                st.image(str(FL_IMAGE_PATH), width="stretch")
-            else:
-                st.info(f"Diagram not found at `{FL_IMAGE_PATH}`.")
+    what_html = (
+        f'<div style="{CARD_STYLE}">'
+        '<div class="fl-card-title" style="font-size:1.15rem;">What is Federated Learning (FL)?</div>'
+        '<div class="fl-card-text" style="font-size:0.92rem; line-height:1.55;">Federated Learning (FL) is a '
+        "distributed machine learning paradigm that allows multiple participants (clients) to "
+        "collaboratively train a model without sharing their local data. Each client keeps its "
+        "data locally and only shares model updates or aggregated information with a central server.</div>"
+        '<div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-top:0.9rem; align-items:stretch;">'
+        + mini_box("lock", PALETTE["violet"], PALETTE["violet_soft"], "Data stays local", "Raw data never leaves the client.")
+        + mini_box("users", PALETTE["primary"], PALETTE["primary_soft"], "Collaborative learning", "Multiple clients contribute to a shared model.")
+        + mini_box("shield", PALETTE["success"], PALETTE["success_soft"], "Privacy-preserving", "Reduces the risk of exposing sensitive data.")
+        + mini_box("database", PALETTE["violet"], PALETTE["violet_soft"], "Global model", "The server aggregates client contributions to improve the model.")
+        + "</div></div>"
+    )
+
+    st.markdown(
+        '<div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1rem; align-items:stretch;">'
+        + what_html
+        + glance_html
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
     st.write("")
 
@@ -460,57 +461,34 @@ with overview_tab:
 
     st.write("")
 
-    why_col, challenges_col = st.columns(2)
+    def mini_box_grid(boxes: list[str]) -> None:
+        # one HTML grid: the four boxes of a row always have the same height
+        st.markdown(
+            '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); '
+            'gap:1rem; align-items:stretch;">' + "".join(boxes) + "</div>",
+            unsafe_allow_html=True,
+        )
 
-    with why_col:
-        with st.container(key="fl_card_why"):
-            st.markdown('<div class="fl-card-title" style="font-size:1.05rem;">Why use federated learning?</div>', unsafe_allow_html=True)
-            why_a, why_b, why_c, why_d = st.columns(4)
-            with why_a:
-                st.markdown(
-                    mini_box("lock", PALETTE["violet"], PALETTE["violet_soft"], "Privacy & data control", "Keep sensitive data local (e.g., personal, medical, financial)."),
-                    unsafe_allow_html=True,
-                )
-            with why_b:
-                st.markdown(
-                    mini_box("shield", PALETTE["primary"], PALETTE["primary_soft"], "Regulatory compliance", "Helps meet regulations such as GDPR."),
-                    unsafe_allow_html=True,
-                )
-            with why_c:
-                st.markdown(
-                    mini_box("link", PALETTE["success"], PALETTE["success_soft"], "Access to more data", "Learn from distributed data that cannot be centralized."),
-                    unsafe_allow_html=True,
-                )
-            with why_d:
-                st.markdown(
-                    mini_box("users", PALETTE["primary"], PALETTE["primary_soft"], "Real-world applicability", "Suitable for organizations, hospitals, companies, and mobile devices."),
-                    unsafe_allow_html=True,
-                )
+    # Why use FL? on top, Challenges below (each one full width)
+    with st.container(key="fl_card_why"):
+        st.markdown('<div class="fl-card-title" style="font-size:1.05rem;">Why use federated learning?</div>', unsafe_allow_html=True)
+        mini_box_grid([
+            mini_box("lock", PALETTE["violet"], PALETTE["violet_soft"], "Privacy & data control", "Keep sensitive data local (e.g., personal, medical, financial)."),
+            mini_box("shield", PALETTE["primary"], PALETTE["primary_soft"], "Regulatory compliance", "Helps meet regulations such as GDPR."),
+            mini_box("link", PALETTE["success"], PALETTE["success_soft"], "Access to more data", "Learn from distributed data that cannot be centralized."),
+            mini_box("users", PALETTE["primary"], PALETTE["primary_soft"], "Real-world applicability", "Suitable for organizations, hospitals, companies, and mobile devices."),
+        ])
 
-    with challenges_col:
-        with st.container(key="fl_card_challenges"):
-            st.markdown('<div class="fl-card-title" style="font-size:1.05rem;">Challenges</div>', unsafe_allow_html=True)
-            ch_a, ch_b, ch_c, ch_d = st.columns(4)
-            with ch_a:
-                st.markdown(
-                    mini_box("database", PALETTE["error"], PALETTE["error_soft"], "Data heterogeneity", "Clients may have non-IID data distributions."),
-                    unsafe_allow_html=True,
-                )
-            with ch_b:
-                st.markdown(
-                    mini_box("wifi", PALETTE["warning"], PALETTE["warning_soft"], "Communication cost", "Repeated model updates can be expensive."),
-                    unsafe_allow_html=True,
-                )
-            with ch_c:
-                st.markdown(
-                    mini_box("warning", PALETTE["warning"], PALETTE["warning_soft"], "Security risks", "Model updates can still leak information and are vulnerable to attacks."),
-                    unsafe_allow_html=True,
-                )
-            with ch_d:
-                st.markdown(
-                    mini_box("settings", PALETTE["primary"], PALETTE["primary_soft"], "Algorithm design", "Need robust aggregation and methods that handle distributed and heterogeneous data."),
-                    unsafe_allow_html=True,
-                )
+    st.write("")
+
+    with st.container(key="fl_card_challenges"):
+        st.markdown('<div class="fl-card-title" style="font-size:1.05rem;">Challenges</div>', unsafe_allow_html=True)
+        mini_box_grid([
+            mini_box("database", PALETTE["error"], PALETTE["error_soft"], "Data heterogeneity", "Clients may have non-IID data distributions."),
+            mini_box("wifi", PALETTE["warning"], PALETTE["warning_soft"], "Communication cost", "Repeated model updates can be expensive."),
+            mini_box("warning", PALETTE["warning"], PALETTE["warning_soft"], "Security risks", "Model updates can still leak information and are vulnerable to attacks."),
+            mini_box("settings", PALETTE["primary"], PALETTE["primary_soft"], "Algorithm design", "Need robust aggregation and methods that handle distributed and heterogeneous data."),
+        ])
 
 
 def render_text_card(title: str, paragraphs: list[str], link: tuple[str, str] | None = None) -> None:

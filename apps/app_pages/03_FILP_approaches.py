@@ -24,7 +24,7 @@ LINKEDIN_URL = "https://www.linkedin.com/in/yasmine-akaichi-761975197/"
 
 st.set_page_config(
     page_title="FILP Approaches",
-    page_icon=":material/compare_arrows:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 
@@ -375,6 +375,29 @@ def render_step_card(number: int, title: str, body: str) -> None:
     )
 
 
+def render_card_row(cards: list[tuple], kind: str = "info", min_width: int = 220) -> None:
+    """A row of cards in ONE html grid: the cards of a row always have the same height,
+    whatever the length of their text. cards = (title, body) for 'info',
+    (number, title, body) for 'step'."""
+    if kind == "step":
+        html = "".join(
+            f'<div class="step-card"><div class="step-number">{n}</div>'
+            f'<div class="step-title">{t}</div><div class="step-body">{b}</div></div>'
+            for n, t, b in cards
+        )
+    else:
+        html = "".join(
+            f'<div class="info-card"><div class="info-title">{t}</div>'
+            f'<div class="info-body">{b}</div></div>'
+            for t, b in cards
+        )
+    st.markdown(
+        f'<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax({min_width}px, 1fr)); '
+        f'gap:1rem; align-items:stretch;">{html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_feature_card(icon: str, title: str, body: str) -> None:
     st.markdown(
         f'<div class="feature-card"><div class="feature-title">{icon} {title}</div>'
@@ -511,15 +534,12 @@ with collaboration_tab:
         "not change what is learned — only how it is computed."
     )
 
-    step_1, step_2, step_3, step_4 = st.columns(4)
-    with step_1:
-        render_info_card("Generate", "The server generates a candidate hypothesis from the constraints accumulated so far.")
-    with step_2:
-        render_info_card("Broadcast", "The hypothesis is sent to every client.")
-    with step_3:
-        render_info_card("Test", "Each client evaluates it locally and returns only its outcome and score.")
-    with step_4:
-        render_info_card("Aggregate & constrain", "The server combines the outcomes and derives the next constraint, or stops if the hypothesis is complete and consistent.")
+    render_card_row([
+        ("Generate", "The server generates a candidate hypothesis from the constraints accumulated so far."),
+        ("Broadcast", "The hypothesis is sent to every client."),
+        ("Test", "Each client evaluates it locally and returns only its outcome and score."),
+        ("Aggregate & constrain", "The server combines the outcomes and derives the next constraint, or stops if the hypothesis is complete and consistent."),
+    ], min_width=200)
 
     st.divider()
 
@@ -529,22 +549,10 @@ with collaboration_tab:
 
     st.markdown('<div class="section-title">What the paper shows</div>', unsafe_allow_html=True)
 
-    result_1, result_2 = st.columns(2)
-    with result_1:
-        render_info_card(
-            "Correctness",
-            "Across all datasets and partitioning strategies tested, "
-            "FedPopper reaches the same hypothesis as centralized Popper, "
-            "matching it exactly in coverage.",
-        )
-    with result_2:
-        render_info_card(
-            "Cost of federation",
-            "The coordination overhead of federation is separable from the "
-            "symbolic search itself: the number of refinement rounds is "
-            "preserved, and the extra cost is purely communication and "
-            "synchronization.",
-        )
+    render_card_row([
+        ('Correctness', 'Across all datasets and partitioning strategies tested, FedPopper reaches the same hypothesis as centralized Popper, matching it exactly in coverage.'),
+        ('Cost of federation', 'The coordination overhead of federation is separable from the symbolic search itself: the number of refinement rounds is preserved, and the extra cost is purely communication and synchronization.'),
+    ], min_width=300)
 
     st.divider()
 
@@ -557,8 +565,9 @@ with collaboration_tab:
     with st.container(border=True):
         st.markdown(
             "**Akaichi, Y., Jacquet, J.-M., Linden, I., & Vanhoof, W.** "
-            "*FedPopper: Federated Learning Logic Programs from Aggregated "
-            "Failures.* Manuscript under review."
+            "[*FedPopper: Federated Learning Logic Programs from Aggregated "
+            "Failures.*](https://doi.org/10.5281/zenodo.20659933) "
+            "Accepted for publication."
         )
         st.caption(
             "Code: Akaichi, Y., Jacquet, J.-M. The FedPopper Framework. "
@@ -661,15 +670,12 @@ with coordination_tab:
         unsafe_allow_html=True,
     )
 
-    primitive_1, primitive_2, primitive_3, primitive_4 = st.columns(4)
-    with primitive_1:
-        render_info_card("tell(t)", "Writes tuple t to the shared store. Always succeeds.")
-    with primitive_2:
-        render_info_card("get(t)", "Reads and removes t from the store — requires t to be present.")
-    with primitive_3:
-        render_info_card("ask(t)", "Tests whether t is present, without removing it.")
-    with primitive_4:
-        render_info_card("nask(t)", "Tests whether t is absent from the store.")
+    render_card_row([
+        ("tell(t)", "Writes tuple t to the shared store. Always succeeds."),
+        ("get(t)", "Reads and removes t from the store — requires t to be present."),
+        ("ask(t)", "Tests whether t is present, without removing it."),
+        ("nask(t)", "Tests whether t is absent from the store."),
+    ], min_width=200)
 
     st.caption(
         "Bach was developed at the Nadi Research Institute (Darquennes, "
@@ -685,21 +691,10 @@ with coordination_tab:
 
     st.markdown('<div class="section-title">What the paper shows</div>', unsafe_allow_html=True)
 
-    result_1, result_2 = st.columns(2)
-    with result_1:
-        render_info_card(
-            "Correctness",
-            "Bach4Popper is shown, both theoretically and empirically, to be "
-            "correct with respect to the corresponding centralized version "
-            "of Popper.",
-        )
-    with result_2:
-        render_info_card(
-            "Performance",
-            "Experimental results show that computational performance is "
-            "preserved when moving from a centralized to a federated "
-            "setting.",
-        )
+    render_card_row([
+        ('Correctness', 'Bach4Popper is shown, both theoretically and empirically, to be correct with respect to the corresponding centralized version of Popper.'),
+        ('Performance', 'Experimental results show that computational performance is preserved when moving from a centralized to a federated setting.'),
+    ], min_width=300)
 
     st.divider()
 
@@ -860,15 +855,14 @@ with consensus_tab:
         ("Compute metrics", "The consensus prediction is compared with the true label to compute Accuracy, Precision, Recall and F1."),
     ]
 
-    row_1 = st.columns(4)
-    for col, (idx, (title, body)) in zip(row_1, enumerate(exp_steps[:4], start=1)):
-        with col:
-            render_step_card(idx, title, body)
-
-    row_2 = st.columns(4)
-    for col, (idx, (title, body)) in zip(row_2, enumerate(exp_steps[4:], start=5)):
-        with col:
-            render_step_card(idx, title, body)
+    render_card_row(
+        [(idx, title, body) for idx, (title, body) in enumerate(exp_steps[:4], start=1)],
+        kind="step", min_width=200,
+    )
+    render_card_row(
+        [(idx, title, body) for idx, (title, body) in enumerate(exp_steps[4:], start=5)],
+        kind="step", min_width=200,
+    )
 
     st.divider()
 

@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 st.set_page_config(
     page_title="Documentation | FILP",
-    page_icon=":material/menu_book:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 

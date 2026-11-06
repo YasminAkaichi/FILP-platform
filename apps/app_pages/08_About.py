@@ -50,7 +50,7 @@ PHOTO_PATH = PROJECT_ROOT / "assets" / "yasmine_akaichi.jpg"
 
 st.set_page_config(
     page_title="About | FILP",
-    page_icon=":material/info:",
+    page_icon=str(Path(__file__).resolve().parents[2] / "assets" / "filp_favicon.png"),
     layout="wide",
 )
 
