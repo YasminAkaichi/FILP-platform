@@ -253,6 +253,61 @@ def scalability_table(runs, benchmark_ids, approach, labels=None) -> pd.DataFram
 
 
 # ----------------------------------------------------------------------
+# 0. Partition of the examples among the clients
+# ----------------------------------------------------------------------
+def partition_table(runs, benchmark_ids, approach, labels=None) -> pd.DataFrame:
+    """Positive/negative examples held by each client, one row per selected
+    benchmark (format of the tables of the thesis: "All", then Client 1..K).
+
+    The runs of a benchmark share their seed, hence their partition; the table
+    reads the first run of the benchmark and the column "Same in all runs" checks
+    that the other runs have the same numbers.
+    """
+    fed_all = runs[(runs["approach"] == approach) & (runs["benchmark_id"].isin(benchmark_ids))]
+    if fed_all.empty:
+        return pd.DataFrame()
+    rows, max_k = [], 0
+    for b, g in fed_all.groupby("benchmark_id", sort=True):
+        splits = []
+        for _, f in g.sort_values("run_number").iterrows():
+            with get_connection() as connection:
+                found = connection.execute(
+                    "SELECT client_id, number_of_positive_examples AS pos, "
+                    "number_of_negative_examples AS neg FROM client_results "
+                    "WHERE experiment_id = ? ORDER BY client_id",
+                    (int(f["experiment_id"]),),
+                ).fetchall()
+            if found:
+                splits.append([(int(r["pos"]), int(r["neg"])) for r in found])
+        if not splits:
+            continue
+        first = splits[0]
+        total_pos = sum(p for p, _ in first)
+        total_neg = sum(n for _, n in first)
+        row = {
+            "Benchmark": _label(labels, b),
+            "Dataset": g.iloc[0]["dataset"],
+            "Partition": g.iloc[0]["partition_name"],
+            "Clients (K)": len(first),
+            "All": f"{total_pos}/{total_neg}",
+        }
+        for i, (p, n) in enumerate(first, start=1):
+            row[f"Client {i}"] = f"{p}/{n}"
+        row["Same in all runs"] = "yes" if all(s == first for s in splits) else "no"
+        max_k = max(max_k, len(first))
+        rows.append(row)
+    frame = pd.DataFrame(rows)
+    # Benchmarks with fewer clients leave the extra client columns empty.
+    for i in range(1, max_k + 1):
+        if f"Client {i}" not in frame:
+            frame[f"Client {i}"] = DASH
+        frame[f"Client {i}"] = frame[f"Client {i}"].fillna(DASH)
+    fixed = ["Benchmark", "Dataset", "Partition", "Clients (K)", "All"]
+    clients = [f"Client {i}" for i in range(1, max_k + 1)]
+    return frame[fixed + clients + ["Same in all runs"]]
+
+
+# ----------------------------------------------------------------------
 # 6. Communication
 # ----------------------------------------------------------------------
 def communication_table(runs, benchmark_ids, approach, labels=None) -> pd.DataFrame:

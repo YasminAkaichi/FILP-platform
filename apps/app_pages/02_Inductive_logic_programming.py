@@ -132,6 +132,9 @@ def inject_style() -> None:
             max-width: 100% !important;
             background: #F3F4F6;
         }}
+        [data-testid="stHeader"] {{
+            background: transparent;
+        }}
 
         div[class*="st-key-ovcard_"] {{
             background: #FFFFFF;

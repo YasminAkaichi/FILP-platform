@@ -11,10 +11,37 @@ import sys
 import time
 import traceback
 
+from contextlib import contextmanager
+
 from popper.tester import Tester
-from popper.core import Literal
+from popper.core import Clause, Literal
 from popper.loop import decide_outcome, calc_score
 from popper.util import Settings, Stats, load_kbpath
+
+
+class OrderedTester(Tester):
+    """Tester that asserts each clause with its literals in the order received.
+
+    Popper's Tester.using() calls Clause.to_ordered, which reorders the body
+    literals according to the iteration order of a set. That order depends on
+    the hash seed, so the same program can be evaluated in very different
+    orders (0.13 s vs 93 s) and, with the evaluation time limit, get different
+    scores. Here the order sent by the server is kept.
+    """
+
+    @contextmanager
+    def using(self, rules):
+        current_clauses = set()
+        try:
+            for rule in rules:
+                head, _ = rule
+                self.prolog.assertz(Clause.to_code(rule))
+                current_clauses.add((head.predicate, head.arity))
+            yield
+        finally:
+            for predicate, arity in current_clauses:
+                args = ','.join(['_'] * arity)
+                self.prolog.retractall(f'{predicate}({args})')
 
 
 # ======================================================
@@ -161,7 +188,7 @@ def initialisation(
         eval_timeout=float(_os.environ.get("FILP_EVAL_TIMEOUT", "0.001")),
     )
 
-    tester = Tester(
+    tester = OrderedTester(
         settings
     )
 

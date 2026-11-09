@@ -33,10 +33,31 @@ import time
 import flwr as fl
 import numpy as np
 
-from popper.core import Literal
+from contextlib import contextmanager
+
+from popper.core import Clause, Literal
 from popper.loop import calc_score, decide_outcome
 from popper.tester import Tester
 from popper.util import Settings, Stats, format_conf_matrix, load_kbpath
+
+
+class OrderedTester(Tester):
+    """Tester that asserts each clause with its literals in the order received
+    (Popper's Tester.using() reorders them through a set, hash-seed dependent)."""
+
+    @contextmanager
+    def using(self, rules):
+        current_clauses = set()
+        try:
+            for rule in rules:
+                head, _ = rule
+                self.prolog.assertz(Clause.to_code(rule))
+                current_clauses.add((head.predicate, head.arity))
+            yield
+        finally:
+            for predicate, arity in current_clauses:
+                args = ','.join(['_'] * arity)
+                self.prolog.retractall(f'{predicate}({args})')
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -553,7 +574,7 @@ def main() -> None:
         eval_timeout=float(_os.environ.get("FILP_EVAL_TIMEOUT", "0.001")),
     )
 
-    tester = Tester(settings)
+    tester = OrderedTester(settings)
     stats = Stats(log_best_programs=settings.info)
 
     settings.num_pos = len(tester.pos)

@@ -85,6 +85,7 @@ def _render_thesis_tables(runs, chosen_benchmarks, approach: str, labels: dict, 
         )
         tabs = st.tabs([
             "Equivalence", "Learned programs", "Non-IID", "Scalability", "Learning time", "Communication",
+            "Partition",
         ])
 
         with tabs[0]:
@@ -166,6 +167,18 @@ def _render_thesis_tables(runs, chosen_benchmarks, approach: str, labels: dict, 
                 "and score) and, for each clause of the program, one clause-level answer (inconsistent, "
                 "totally incomplete). No example, fact or rule is sent. Sizes in bytes are not measured.",
                 "No run in the selected benchmarks.",
+            )
+
+        with tabs[6]:
+            _show_table(
+                thesis_tables.partition_table(selected, ids, approach, labels),
+                f"{approach}_partition",
+                f"Positive/negative examples of each client ({name}).",
+                "Positive/negative examples held by each client, for each selected benchmark. “All” is the "
+                "total over the clients. The runs of a benchmark use the same seed, hence the same partition "
+                "(“Same in all runs”). Non-IID: the positive examples are distributed with weights 1, 2, … K "
+                "and the negative examples with weights K, …, 2, 1.",
+                "No client result for the selected benchmarks.",
             )
 
 

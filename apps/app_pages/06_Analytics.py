@@ -778,6 +778,25 @@ def load_client_and_consensus(experiment_ids: tuple[int, ...]) -> tuple[pd.DataF
     )
 
 
+@st.cache_data(ttl=30)
+def load_benchmark_runs_meta() -> pd.DataFrame:
+    """One row per benchmark run: approach, dataset, seeds, benchmark status.
+    Used by the Overview tab (coverage and reproducibility)."""
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                b.id AS benchmark_id, b.approach, b.dataset, b.status,
+                b.number_of_clients, b.partition_strategy, b.base_seed,
+                br.run_number, br.random_seed
+            FROM benchmarks AS b
+            JOIN benchmark_runs AS br ON br.benchmark_id = b.id
+            """
+        ).fetchall()
+    return pd.DataFrame([dict(row) for row in rows])
+
+
 def mean_std_str(values: pd.Series, decimals: int = 2) -> str:
     clean = values.dropna()
     if clean.empty:
@@ -832,179 +851,379 @@ if benchmarks_df.empty:
 with tab_overview:
     present_approaches_all = set(benchmarks_df["approach"].dropna().unique().tolist())
 
-    total_experiments = len(benchmarks_df)
-    completed_experiments = int((benchmarks_df["status"] == "COMPLETED").sum())
-    completed_pct = (completed_experiments / total_experiments * 100) if total_experiments else 0.0
+    APPROACH_LABEL = {
+        "centralized": "Centralized",
+        "consensus": "Consensus",
+        "coordination": "Coordination (Bach4Popper)",
+        "collaboration": "Collaboration (FedPopper)",
+        "mdl_federation": "MDL Federation",
+    }
+    approach_colors = {a: APPROACH_CHART_COLORS.get(a, PALETTE["neutral"]) for a in present_approaches_all}
+    AXIS_STYLE = dict(grid=False, domainColor=PALETTE["border"], labelColor=PALETTE["text_muted"])
+
+    meta_df = load_benchmark_runs_meta()
+
+    total_benchmarks = len(benchmarks_df)
+    completed_benchmarks = int((benchmarks_df["status"] == "COMPLETED").sum())
+    total_executions = len(run_df) if not run_df.empty else 0
+    runs_in_benchmarks = int(run_df["benchmark_id"].notna().sum()) if not run_df.empty else 0
     total_datasets = benchmarks_df["dataset"].nunique()
-    total_runs = len(run_df) if not run_df.empty else 0
     total_runtime_hours = (
         run_df["total_time_seconds"].fillna(0.0).sum() / 3600.0 if not run_df.empty else 0.0
     )
 
+    st.caption(
+        "A **benchmark** is one configuration (approach, dataset, clients, partition) repeated over several "
+        "**runs**; every run is one **experiment** (one execution of the approach)."
+    )
+
     render_metric_grid(
         [
-            {"label": "Total experiments", "value": total_experiments},
-            {"label": "Completed", "value": f"{completed_experiments} ({completed_pct:.0f}%)"},
+            {"label": "Benchmarks", "value": total_benchmarks, "sub": f"{completed_benchmarks} completed"},
+            {"label": "Runs in benchmarks", "value": runs_in_benchmarks},
+            {"label": "Experiments executed", "value": total_executions, "sub": "including single simulations"},
             {"label": "Datasets", "value": total_datasets},
-            {"label": "Total runs", "value": total_runs},
-            {"label": "Total runtime", "value": f"{total_runtime_hours:.1f}h"},
+            {"label": "Approaches", "value": len(present_approaches_all)},
+            {"label": "Total compute time", "value": f"{total_runtime_hours:.1f}h"},
         ]
     )
 
     st.write("")
 
-    # --- Recent experiments + Experiments by approach ---------------------
+    # --- Coverage: runs per approach + datasets per approach ----------------
 
-    left_col, right_col = st.columns([1.3, 1])
+    cov_left, cov_right = st.columns([1, 1.25])
 
-    with left_col:
+    with cov_left:
         with st.container(border=True):
-            header_left, header_right = st.columns([4, 1])
-            with header_left:
-                st.markdown('<div class="section-title">Recent experiments</div>', unsafe_allow_html=True)
-            with header_right:
-                st.page_link(
-                    "app_pages/05_Experiments.py",
-                    label="View all →",
+            st.markdown('<div class="section-title">Runs per approach</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="section-caption">How much each approach has actually been run</div>',
+                unsafe_allow_html=True,
+            )
+            if meta_df.empty:
+                st.info("No benchmark run recorded yet.")
+            else:
+                per_approach = (
+                    meta_df.groupby("approach")
+                    .agg(runs=("run_number", "size"), benchmarks=("benchmark_id", "nunique"))
+                    .reset_index()
+                )
+                per_approach["label"] = per_approach["approach"].map(lambda a: APPROACH_LABEL.get(a, a))
+                per_approach["text"] = per_approach.apply(
+                    lambda r: f'{int(r["runs"])} runs · {int(r["benchmarks"])} benchmarks', axis=1
+                )
+                per_approach = per_approach.sort_values("runs", ascending=False)
+                order = per_approach["label"].tolist()
+                color_scale = alt.Scale(
+                    domain=per_approach["label"].tolist(),
+                    range=[approach_colors.get(a, PALETTE["neutral"]) for a in per_approach["approach"]],
+                )
+                bars = (
+                    alt.Chart(per_approach)
+                    .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                    .encode(
+                        y=alt.Y("label:N", sort=order, title=None, axis=alt.Axis(labelLimit=220)),
+                        x=alt.X(
+                            "runs:Q", title=None,
+                            # room on the right for the "N runs · M benchmarks" labels
+                            scale=alt.Scale(domain=[0, float(per_approach["runs"].max()) * 1.6]),
+                        ),
+                        color=alt.Color("label:N", scale=color_scale, legend=None),
+                        tooltip=["label", "runs", "benchmarks"],
+                    )
+                )
+                labels = bars.mark_text(align="left", dx=5, color=PALETTE["text"], fontSize=12).encode(
+                    text="text:N"
+                )
+                st.altair_chart(
+                    (bars + labels)
+                    .properties(height=max(150, 46 * len(per_approach)))
+                    .configure_axis(**AXIS_STYLE)
+                    .configure_view(strokeWidth=0),
                     use_container_width=True,
                 )
 
-            recent = benchmarks_df.head(8).copy()
-            recent["Approach"] = recent["approach"].map(lambda a: render_method_badge(a))
-            recent["Status"] = recent["status"].map(lambda s: render_badge(s))
-            recent["Start time"] = recent["created_at"].dt.strftime("%Y-%m-%d %H:%M").fillna("—")
-            recent["Finish time"] = recent["completed_at"].dt.strftime("%Y-%m-%d %H:%M")
-            recent["Finish time"] = recent["Finish time"].where(recent["completed_at"].notna(), "—")
-            recent["Duration"] = recent["duration_seconds"].map(fmt_duration)
-
-            table_rows = []
-            for _, row in recent.iterrows():
-                table_rows.append(
-                    "<tr>"
-                    f'<td>{row["id"]}</td>'
-                    f'<td>{row["Approach"]}</td>'
-                    f'<td>{row["dataset"]}</td>'
-                    f'<td>{row["number_of_clients"]}</td>'
-                    f'<td>{row["partition_strategy"]}</td>'
-                    f'<td>{row["Start time"]}</td>'
-                    f'<td>{row["Finish time"]}</td>'
-                    f'<td>{row["Duration"]}</td>'
-                    f'<td>{row["Status"]}</td>'
-                    "</tr>"
-                )
-
-            table_html = f"""
-            <style>
-            .recent-table {{ width: 100%; border-collapse: collapse; font-size: 0.82rem; }}
-            .recent-table th {{
-                text-align: left; font-weight: 600; color: {PALETTE["text_muted"]};
-                text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.72rem;
-                padding: 6px 8px; border-bottom: 1px solid {PALETTE["border"]};
-            }}
-            .recent-table td {{
-                padding: 7px 8px; border-bottom: 1px solid {PALETTE["border"]}; color: {PALETTE["text"]};
-                white-space: nowrap;
-            }}
-            .recent-table tr:last-child td {{ border-bottom: none; }}
-            </style>
-            <div style="width:100%; overflow-x:auto;">
-            <table class="recent-table">
-                <thead><tr>
-                    <th>ID</th><th>Approach</th><th>Dataset</th><th>Clients (K)</th>
-                    <th>Partition</th><th>Start time</th><th>Finish time</th><th>Duration</th><th>Status</th>
-                </tr></thead>
-                <tbody>{"".join(table_rows)}</tbody>
-            </table>
-            </div>
-            """
-            st.markdown(table_html, unsafe_allow_html=True)
-
-    with right_col:
+    with cov_right:
         with st.container(border=True):
-            st.markdown('<div class="section-title">Experiments by approach</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Datasets per approach</div>', unsafe_allow_html=True)
             st.markdown(
-                '<div class="section-caption">Number of experiments per dataset, split by approach</div>',
+                '<div class="section-caption">Number of runs for each dataset and approach '
+                '(empty = not run yet)</div>',
                 unsafe_allow_html=True,
             )
-
-            by_approach = (
-                benchmarks_df.groupby(["dataset", "approach"]).size().reset_index(name="count")
-            )
-            approach_colors = {a: APPROACH_CHART_COLORS.get(a, PALETTE["neutral"]) for a in present_approaches_all}
-            st.altair_chart(
-                altair_stacked_bar(by_approach, "dataset", "count", "approach", approach_colors),
-                use_container_width=True,
-            )
+            if meta_df.empty:
+                st.info("No benchmark run recorded yet.")
+            else:
+                heat = (
+                    meta_df.groupby(["dataset", "approach"]).size().reset_index(name="runs")
+                )
+                heat["approach_label"] = heat["approach"].map(lambda a: APPROACH_LABEL.get(a, a))
+                ds_order = (
+                    heat.groupby("dataset")["runs"].sum().sort_values(ascending=False).index.tolist()
+                )
+                ap_order = [APPROACH_LABEL.get(a, a) for a in APPROACH_LABEL if a in present_approaches_all]
+                base = alt.Chart(heat).encode(
+                    x=alt.X(
+                        "approach_label:N", sort=ap_order, title=None,
+                        axis=alt.Axis(labelAngle=-30, labelLimit=170),
+                    ),
+                    y=alt.Y("dataset:N", sort=ds_order, title=None),
+                )
+                rect = base.mark_rect(cornerRadius=3).encode(
+                    color=alt.Color(
+                        "runs:Q", title=None,
+                        scale=alt.Scale(range=["#DCE7FD", "#3E7BFA", "#1B2A4C"]),
+                        legend=None,
+                    ),
+                    tooltip=["dataset", "approach_label", "runs"],
+                )
+                txt = base.mark_text(fontSize=12, fontWeight="bold").encode(
+                    text="runs:Q",
+                    color=alt.condition(alt.datum.runs > 20, alt.value("white"), alt.value(PALETTE["text"])),
+                )
+                st.altair_chart(
+                    (rect + txt)
+                    .properties(height=max(200, 26 * len(ds_order)))
+                    .configure_axis(**AXIS_STYLE)
+                    .configure_view(strokeWidth=0),
+                    use_container_width=True,
+                )
 
     st.write("")
 
-    # --- Overall performance + Runtime distribution + Partition donut ----
+    # --- Reproducibility ----------------------------------------------------
 
     with st.container(border=True):
+        st.markdown('<div class="section-title">Reproducibility</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="section-title">Overall performance (all approaches, all datasets)</div>',
+            '<div class="section-caption">Every run records its random seed, so a benchmark can be replayed '
+            'with the same partitions; repeated runs show how stable the results are</div>',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            '<div class="section-caption">Mean ± standard deviation across every run with a computable '
-            'confusion matrix — centralized and consensus runs are evaluated on the global test set, '
-            'collaboration/coordination runs are the sum of every client\'s local confusion matrix</div>',
-            unsafe_allow_html=True,
-        )
-
-        perf_left, perf_right = st.columns([1, 1.3])
-
-        with perf_left:
-            render_metric_grid(
-                [
-                    {"label": label, "value": mean_std_str(run_df[key])}
-                    for key, label in PERFORMANCE_METRICS.items()
-                ]
-                if not run_df.empty
-                else [{"label": label, "value": "—"} for label in PERFORMANCE_METRICS.values()]
+        if meta_df.empty:
+            st.info("No benchmark run recorded yet.")
+        else:
+            seed_pct = meta_df["random_seed"].notna().mean() * 100
+            seeds_used = sorted({int(s) for s in meta_df["random_seed"].dropna().unique()})
+            base_seeds = sorted({int(s) for s in meta_df["base_seed"].dropna().unique()})
+            bench = meta_df.groupby("benchmark_id").agg(
+                runs=("run_number", "size"), approach=("approach", "first")
             )
+            repeated_pct = (bench["runs"] >= 3).mean() * 100
 
-            st.write("")
-            st.markdown('<div class="section-title" style="font-size:0.95rem;">Experiments by partition</div>', unsafe_allow_html=True)
-            partition_counts = benchmarks_df["partition_strategy"].value_counts().reset_index()
-            partition_counts.columns = ["Partition", "Count"]
-            partition_palette = {"iid": "#3E7BFA", "non_iid": "#F59E0B"}
-            for name in partition_counts["Partition"]:
-                partition_palette.setdefault(name, PALETTE["neutral"])
-            st.altair_chart(
-                altair_donut(
-                    partition_counts, "Partition", "Count", partition_palette,
-                    inner_radius=42, outer_radius=70, height=170, center_text_size=18,
-                ),
-                use_container_width=True,
-            )
-
-        with perf_right:
-            st.markdown('<div class="section-title" style="font-size:0.95rem;">Runtime distribution</div>', unsafe_allow_html=True)
-            runtime_values = run_df["total_time_seconds"].dropna()
-            runtime_values = runtime_values[runtime_values > 0]
-            if runtime_values.empty:
-                st.info("No completed runs with a recorded runtime yet.")
-            else:
-                runtime_chart_df = pd.DataFrame({"total_time_seconds": runtime_values})
-                runtime_hist = (
-                    alt.Chart(runtime_chart_df)
-                    .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#3E7BFA")
+            rep_left, rep_right = st.columns([1, 1.4])
+            with rep_left:
+                render_metric_grid(
+                    [
+                        {"label": "Runs with a recorded seed", "value": f"{seed_pct:.0f}%"},
+                        {
+                            "label": "Base seeds used",
+                            "value": ", ".join(str(s) for s in base_seeds) if base_seeds else "—",
+                            "sub": f"{len(seeds_used)} distinct run seeds",
+                        },
+                        {"label": "Benchmarks repeated ≥ 3 times", "value": f"{repeated_pct:.0f}%"},
+                        {"label": "Mean runs per benchmark", "value": f"{bench['runs'].mean():.1f}"},
+                    ]
+                )
+            with rep_right:
+                bench["runs_bucket"] = pd.cut(
+                    bench["runs"], bins=[0, 1, 2, 4, 9, 10_000],
+                    labels=["1 run", "2 runs", "3–4 runs", "5–9 runs", "10+ runs"],
+                )
+                dist = (
+                    bench.groupby(["runs_bucket", "approach"], observed=True).size().reset_index(name="benchmarks")
+                )
+                dist["approach_label"] = dist["approach"].map(lambda a: APPROACH_LABEL.get(a, a))
+                st.altair_chart(
+                    alt.Chart(dist)
+                    .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
                     .encode(
                         x=alt.X(
-                            "total_time_seconds:Q",
-                            bin=alt.Bin(maxbins=25),
-                            scale=alt.Scale(type="log", base=10),
-                            title="Runtime (s, log scale)",
+                            "runs_bucket:N", title="Runs per benchmark", sort=None,
+                            axis=alt.Axis(labelAngle=0),
                         ),
-                        y=alt.Y("count():Q", title="Runs"),
-                        tooltip=[alt.Tooltip("count():Q", title="Runs")],
+                        y=alt.Y("benchmarks:Q", title="Benchmarks"),
+                        color=alt.Color(
+                            "approach_label:N", title=None,
+                            scale=alt.Scale(
+                                domain=[APPROACH_LABEL.get(a, a) for a in approach_colors],
+                                range=list(approach_colors.values()),
+                            ),
+                            legend=alt.Legend(orient="bottom", symbolType="circle"),
+                        ),
+                        tooltip=["runs_bucket", "approach_label", "benchmarks"],
                     )
-                    .properties(height=230)
-                    .configure_axis(grid=False, domainColor=PALETTE["border"], labelColor=PALETTE["text_muted"])
-                    .configure_view(strokeWidth=0)
+                    .properties(height=210)
+                    .configure_axis(**AXIS_STYLE)
+                    .configure_view(strokeWidth=0),
+                    use_container_width=True,
                 )
-                st.altair_chart(runtime_hist, use_container_width=True)
+
+    st.write("")
+
+    # --- Bach4Popper (Coordination) vs FedPopper (Collaboration) -------------
+
+    with st.container(border=True):
+        head_l, head_r = st.columns([3, 1.4])
+        with head_l:
+            st.markdown(
+                '<div class="section-title">Coordination (Bach4Popper) vs Collaboration (FedPopper)</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div class="section-caption">Same Popper search, two federation layers: the Bach shared '
+                'store versus Flower rounds. Only configurations run with both approaches '
+                '(same dataset, number of clients, partition) are compared; bars show mean ± standard '
+                'deviation over the runs</div>',
+                unsafe_allow_html=True,
+            )
+        with head_r:
+            bf_metric = st.selectbox(
+                "Measure",
+                options=["learning_time_seconds", "total_time_seconds", "number_of_rounds", "number_of_programs"],
+                format_func=lambda k: METRICS[k],
+                key="overview_bf_metric",
+            )
+
+        bf_all = load_all_run_results()
+        bf = pd.DataFrame()
+        if not bf_all.empty:
+            bf = bf_all[
+                (bf_all["benchmark_status"] == "COMPLETED")
+                & bf_all["approach"].isin(["coordination", "collaboration"])
+            ].dropna(subset=[bf_metric])
+
+        if bf.empty:
+            st.info("No completed Coordination or Collaboration run recorded yet.")
+        else:
+            stats = (
+                bf.groupby(["dataset", "number_of_clients", "partition_strategy", "approach"])[bf_metric]
+                .agg(mean="mean", std="std", runs="size")
+                .reset_index()
+            )
+            stats["std"] = stats["std"].fillna(0.0)
+            both = (
+                stats.groupby(["dataset", "number_of_clients", "partition_strategy"])["approach"]
+                .nunique()
+                .reset_index(name="n")
+            )
+            both = both[both["n"] == 2][["dataset", "number_of_clients", "partition_strategy"]]
+            stats = stats.merge(both, on=["dataset", "number_of_clients", "partition_strategy"])
+
+            if stats.empty:
+                st.info("No configuration has been run with both approaches yet.")
+            else:
+                stats["config"] = stats.apply(
+                    lambda r: f'{r["dataset"]} · K={int(r["number_of_clients"])} · '
+                              f'{"IID" if r["partition_strategy"] == "iid" else "non-IID"}',
+                    axis=1,
+                )
+                stats["approach_label"] = stats["approach"].map(lambda a: APPROACH_LABEL.get(a, a))
+                config_order = (
+                    stats.drop_duplicates("config")
+                    .sort_values(["dataset", "number_of_clients", "partition_strategy"])["config"]
+                    .tolist()
+                )
+                use_log = st.checkbox(
+                    "Logarithmic scale (needed when run times differ by orders of magnitude)",
+                    value=True,
+                    key="overview_bf_log",
+                )
+                stats["low"] = (stats["mean"] - stats["std"]).clip(lower=stats["mean"] * 0.05)
+                stats["high"] = stats["mean"] + stats["std"]
+
+                pair_colors = alt.Scale(
+                    domain=[APPROACH_LABEL["coordination"], APPROACH_LABEL["collaboration"]],
+                    range=[APPROACH_CHART_COLORS["coordination"], APPROACH_CHART_COLORS["collaboration"]],
+                )
+                y_scale = alt.Scale(type="log") if use_log else alt.Scale(zero=True)
+                # Points with whiskers (not bars): bars have no meaningful baseline on a log scale.
+                bars = (
+                    alt.Chart(stats)
+                    .mark_point(filled=True, size=150, opacity=1)
+                    .encode(
+                        x=alt.X("config:N", sort=config_order, title=None, axis=alt.Axis(labelAngle=-35, labelLimit=200)),
+                        xOffset=alt.XOffset("approach_label:N"),
+                        y=alt.Y("mean:Q", scale=y_scale, title=METRICS[bf_metric]),
+                        color=alt.Color(
+                            "approach_label:N", title=None, scale=pair_colors,
+                            legend=alt.Legend(orient="bottom", symbolType="circle"),
+                        ),
+                        tooltip=[
+                            "config", "approach_label", "runs",
+                            alt.Tooltip("mean:Q", format=".2f"), alt.Tooltip("std:Q", format=".2f"),
+                        ],
+                    )
+                )
+                whiskers = (
+                    alt.Chart(stats)
+                    .mark_rule(color=PALETTE["text"], strokeWidth=1.2)
+                    .encode(
+                        x=alt.X("config:N", sort=config_order),
+                        xOffset=alt.XOffset("approach_label:N"),
+                        y=alt.Y("low:Q", scale=y_scale),
+                        y2="high:Q",
+                    )
+                )
+                st.altair_chart(
+                    (bars + whiskers)
+                    .properties(height=330)
+                    .configure_axis(**AXIS_STYLE)
+                    .configure_view(strokeWidth=0),
+                    use_container_width=True,
+                )
+
+                wide = stats.pivot(index="config", columns="approach", values="mean")
+                ratio = (wide["coordination"] / wide["collaboration"]).dropna().reset_index(name="ratio")
+                if not ratio.empty and bf_metric != "number_of_programs":
+                    ratio["faster"] = ratio["ratio"].map(
+                        lambda r: "Coordination higher" if r > 1 else "Collaboration higher"
+                    )
+                    st.markdown(
+                        '<div class="section-title" style="font-size:0.95rem;">'
+                        f'Ratio Coordination / Collaboration — {METRICS[bf_metric]}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    ratio["text"] = ratio["ratio"].map(lambda r: f"×{r:.2f}")
+                    present_dirs = [d for d in ["Coordination higher", "Collaboration higher"] if d in set(ratio["faster"])]
+                    dir_colors = {
+                        "Coordination higher": APPROACH_CHART_COLORS["coordination"],
+                        "Collaboration higher": APPROACH_CHART_COLORS["collaboration"],
+                    }
+                    ratio_bars = (
+                        alt.Chart(ratio)
+                        .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                        .encode(
+                            y=alt.Y("config:N", sort=config_order, title=None, axis=alt.Axis(labelLimit=260)),
+                            x=alt.X("ratio:Q", title="Ratio (1 = same)", scale=alt.Scale(domainMin=0)),
+                            color=alt.Color(
+                                "faster:N", title=None,
+                                scale=alt.Scale(domain=present_dirs, range=[dir_colors[d] for d in present_dirs]),
+                                legend=alt.Legend(orient="bottom", symbolType="circle") if len(present_dirs) > 1 else None,
+                            ),
+                            tooltip=["config", alt.Tooltip("ratio:Q", format=".2f")],
+                        )
+                    )
+                    ratio_text = ratio_bars.mark_text(align="left", dx=5, color=PALETTE["text"], fontSize=12).encode(
+                        text="text:N"
+                    )
+                    one_line = alt.Chart(pd.DataFrame({"x": [1.0]})).mark_rule(
+                        strokeDash=[4, 3], color=PALETTE["text_muted"]
+                    ).encode(x="x:Q")
+                    st.altair_chart(
+                        (ratio_bars + ratio_text + one_line)
+                        .properties(height=max(200, 34 * len(ratio) + 50))
+                        .configure_axis(**AXIS_STYLE)
+                        .configure_view(strokeWidth=0),
+                        use_container_width=True,
+                    )
+                    st.caption(
+                        f"Across {len(ratio)} matched configurations, the median ratio is "
+                        f"×{ratio['ratio'].median():.2f} (min ×{ratio['ratio'].min():.2f}, "
+                        f"max ×{ratio['ratio'].max():.2f}). Both approaches run on the same Popper search; "
+                        "a ratio above 1 means Bach4Popper takes more of this measure than FedPopper."
+                    )
 
     st.write("")
 
@@ -1022,6 +1241,12 @@ with tab_overview:
                 key="overview_perf_metric",
                 label_visibility="collapsed",
             )
+
+        st.caption(
+            "Mean over the runs of each dataset. Centralized and Consensus are scored on the global test set; "
+            "Collaboration and Coordination on the sum of the clients' local confusion matrices, so compare "
+            "approaches with care."
+        )
 
         if run_df.empty:
             st.info("No runs recorded yet.")
