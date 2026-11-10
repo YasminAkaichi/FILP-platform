@@ -31,3 +31,27 @@ datasets/generated/
 
 # Keep the base dataset files (exs.pl / bk.pl / bias.pl) tracked — they are
 # the actual research data, not generated output.
+
+# --- Datasets not used in the thesis: kept locally, not published ---
+# Only zendo1, trains1000, iggp-rps, synthesis-sorted, noisy-alzheimer_acetyl
+# (plus trains and family, used to validate Andante) are tracked.
+datasets/trains1/
+datasets/trains1_part*/
+datasets/trains2/
+datasets/trains2_part*/
+datasets/intubation/
+datasets/mutagenesis/
+datasets/carcinogenesis/
+datasets/bc_popper_optimized/
+datasets/custom_breast_cancer_wisconsin/
+datasets/noisy-zendo2-10/
+datasets/noisy-wn18rr1/
+datasets/noisy-wn18rr3/
+datasets/noisy-dropk-20/
+datasets/noisy-alzheimer_toxic/
+datasets/noisy-alzheimer_mem/
+datasets/noisy-alzheimer_amine/
+datasets/breast-cancer.csv
+datasets/andante/custom_breast_cancer_wisconsin.pl
+datasets/andante/short_family.pl
+datasets/andante/trains2.pl
