@@ -1,6 +1,6 @@
 # FILP Platform
 
-**FILP** (Federated Inductive Logic Programming) is an experimentation platform that combines symbolic reasoning and federated learning to build interpretable, privacy-preserving AI systems. It is developed as part of a PhD thesis at the University of Namur & Université Clermont Auvergne.
+**FILP** (Federated Inductive Logic Programming) is an experimentation platform that combines symbolic reasoning and federated learning to build interpretable, privacy-preserving AI systems. It is developed as part of a PhD thesis at the University of Namur in Belgium.
 
 The platform lets you configure, launch and analyze federated symbolic learning experiments through a Streamlit web interface, with results, hypotheses and client-level metrics stored in a local database for full reproducibility.
 
