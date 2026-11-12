@@ -39,7 +39,6 @@ datasets/trains1/
 datasets/trains1_part*/
 datasets/trains2/
 datasets/trains2_part*/
-datasets/intubation/
 datasets/bc_popper_optimized/
 datasets/custom_breast_cancer_wisconsin/
 datasets/noisy-zendo2-10/
