@@ -796,10 +796,19 @@ class ExperimentLauncher:
         processes = []
         client_processes = []
 
+        # Each process writes its error output to a file so that a failure
+        # (e.g. a missing dependency on a deployment) is reported with its
+        # real cause instead of only a return code.
+        consensus_output_directory.mkdir(parents=True, exist_ok=True)
+        server_log_path = consensus_output_directory / "server_stderr.log"
+        client_log_paths: list[Path] = []
+
         try:
+            server_log = open(server_log_path, "w")
             server_process = subprocess.Popen(
                 server_command,
                 cwd=PROJECT_ROOT,
+                stderr=server_log,
             )
 
             processes.append(server_process)
@@ -810,6 +819,7 @@ class ExperimentLauncher:
                 raise RuntimeError(
                     "Consensus server stopped unexpectedly "
                     "during startup."
+                    + self._log_tail(server_log_path)
                 )
 
             # --------------------------------------------------
@@ -843,9 +853,17 @@ class ExperimentLauncher:
                     f"client {client_id}..."
                 )
 
+                client_log_path = (
+                    consensus_output_directory
+                    / f"client_{client_id}_stderr.log"
+                )
+                client_log_paths.append(client_log_path)
+                client_log = open(client_log_path, "w")
+
                 client_process = subprocess.Popen(
                     client_command,
                     cwd=PROJECT_ROOT,
+                    stderr=client_log,
                 )
 
                 processes.append(client_process)
@@ -867,6 +885,7 @@ class ExperimentLauncher:
                 raise RuntimeError(
                     "Consensus server failed with return code "
                     f"{server_return_code}."
+                    + self._log_tail(server_log_path)
                 )
 
             for client_id, client_process in enumerate(
@@ -882,6 +901,7 @@ class ExperimentLauncher:
                         f"Consensus client {client_id} failed "
                         f"with return code "
                         f"{client_return_code}."
+                        + self._log_tail(client_log_paths[client_id - 1])
                     )
 
             print(
@@ -2211,6 +2231,20 @@ class ExperimentLauncher:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         return process.wait()
+
+    @staticmethod
+    def _log_tail(path: Path, lines: int = 12) -> str:
+        """Last lines of a process's error-output file, formatted to be
+        appended to an error message ('' if there is nothing to show)."""
+        try:
+            tail = "\n".join(
+                Path(path).read_text(errors="replace")
+                .strip()
+                .splitlines()[-lines:]
+            )
+        except OSError:
+            return ""
+        return f"\n\nError output:\n{tail}" if tail else ""
 
     @staticmethod
     def _wait_for_server_ready(
