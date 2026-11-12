@@ -248,6 +248,7 @@ def scalability_table(runs, benchmark_ids, approach, labels=None) -> pd.DataFram
             "Overhead (s)": _cell(g["time_overhead_checked"]),
             "Client 0: learning time (s)": _cell(c0["learning_time_seconds_checked"]),
             "Client 0: client evaluation (s)": _cell(c0["time_client_eval_checked"]),
+            "Client 0: overhead (s)": _cell(c0["time_overhead_checked"]),
         })
     return pd.DataFrame(rows)
 
