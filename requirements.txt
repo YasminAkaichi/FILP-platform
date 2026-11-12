@@ -8,6 +8,11 @@ pandas
 parsimonious
 google-generativeai
 python-sat
+# Popper 4 (symbolic/popper-v4, used by the Consensus learner) needs these two.
+# It is not installed with "-e", so its dependencies are not pulled in
+# automatically.
+bitarray
+janus_swi
 -e ./symbolic/andante
 -e ./symbolic/popper-core
 -e ./symbolic/Popper-v3
