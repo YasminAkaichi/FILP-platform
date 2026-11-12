@@ -256,10 +256,18 @@ class ExperimentLauncher:
         try:
             print("[Launcher] Starting server...")
 
+            # The server's error output goes to a file so that, if it dies
+            # during startup (e.g. a missing or incompatible dependency on a
+            # deployment), the real cause is shown instead of a generic
+            # message.
+            server_log_path = experiment_directory / "server_stderr.log"
+            server_log = open(server_log_path, "w")
+
             server_process = subprocess.Popen(
                 server_command,
                 cwd=PROJECT_ROOT,
                 env=search_environment(),
+                stderr=server_log,
             )
 
             processes.append(server_process)
@@ -270,8 +278,18 @@ class ExperimentLauncher:
             )
 
             if server_process.poll() is not None:
+                server_log.flush()
+                try:
+                    tail = "\n".join(
+                        server_log_path.read_text(errors="replace")
+                        .strip()
+                        .splitlines()[-12:]
+                    )
+                except OSError:
+                    tail = ""
                 raise RuntimeError(
                     "The Collaboration server stopped during startup."
+                    + (f"\n\nServer error output:\n{tail}" if tail else "")
                 )
 
             for client_id, client_dataset in enumerate(
