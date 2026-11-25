@@ -3,7 +3,7 @@ from core.launcher import ExperimentLauncher
 
 config = ExperimentConfig(
     approach="collaboration",
-    dataset="trains2",
+    dataset="trains100",
     number_of_clients=10,
     partition_strategy="non_iid",
     random_seed=42,

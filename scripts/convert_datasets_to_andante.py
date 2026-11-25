@@ -15,7 +15,7 @@ A Popper dataset directory is eligible if it has bias.pl/bk.pl/exs.pl
 AND its bias.pl declares direction(...) for every predicate used in a
 head_pred/body_pred declaration — direction() is required by the
 converter to build Andante mode declarations (+/-), and several of the
-platform's datasets (trains1, trains2, trains1000, iggp-rps, at time of
+platform's datasets (trains10, trains100, trains1000, iggp-rps, at time of
 writing) don't declare it, so conversion for those fails with a clear
 ValueError rather than silently producing a broken file.
 

@@ -1,0 +1,293 @@
+% Fiche 3 — Popper centralisé : la boucle et ses preuves
+% Compilation : pdflatex fiche-popper-centralise.tex   (a besoin de style-fiche.tex)
+\documentclass[10pt]{article}
+\input{style-fiche}
+
+\begin{document}
+
+% ================= EN-TÊTE =================
+\begin{minipage}[c]{0.64\textwidth}
+  {\fontsize{26}{28}\selectfont\bfseries\textcolor{marine}{PROOF}~CHEAT SHEET 3}\\[1pt]
+  {\small Popper (centralized) --- generate, test, constrain : pourquoi ça marche}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.34\textwidth}\raggedright
+  \normalsize \textbf{Sound pruning} $\to$ \textbf{termination}\\ $\to$ \textbf{finds a solution if one exists}
+\end{minipage}
+
+\vspace{5pt}
+
+% ================= LIGNE 1 =================
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{1}The loop (la boucle)}
+\begin{enumerate}[leftmargin=12pt, itemsep=1pt, topsep=1pt]
+  \item \textbf{Generate} (ASP, clingo) : un programme $H_t$ qui respecte toutes les contraintes $\mathcal{C}_{t-1}$.
+  \item \textbf{Test} (Prolog) : TP, FN, FP, TN $\to$ issue $(\varepsilon^+,\varepsilon^-)$.
+  \item \textbf{Constrain} : de $(H_t,\text{issue})$ on tire des contraintes qui \emph{interdisent} des familles de programmes.
+\end{enumerate}
+On s'arrête quand l'issue est (ALL, NONE) : $H_t$ est une \textbf{solution} (complète et cohérente).
+\begin{astuce}
+Le solveur est chargé \textbf{une fois} (multi-shot) : on lui ajoute des contraintes à chaque tour.
+\end{astuce}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{2}Outcome $\to$ constraints}
+{\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}l l L{2.6cm}@{}}
+$\varepsilon^+$ & $\varepsilon^-$ & Prunes (élague)\\\hline
+NONE & NONE & Spec + Redundancy\\
+NONE & SOME & Spec + Red. + Gen\\
+SOME & NONE & Spec\\
+SOME & SOME & Spec + Gen\\
+ALL & SOME & Gen\\
+ALL & NONE & \textbf{Solution}\\
+\end{tabular}}
+\vspace{2pt}
+\begin{itemize}
+  \item \textbf{Spec} si $\varepsilon^+\neq\mathit{ALL}$ (positifs manqués)
+  \item \textbf{Gen} si $\varepsilon^-=\mathit{SOME}$ (négatifs couverts)
+\end{itemize}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{3}Three properties}
+\begin{itemize}
+  \item \textbf{Sound pruning} : une contrainte n'interdit jamais une solution.
+  \item \textbf{Termination} : au plus $|\mathcal{H}|$ tours (chaque tour interdit au moins $H_t$).
+  \item \textbf{Completeness of the search} : s'il existe une solution dans $\mathcal{H}$, Popper en renvoie une.
+\end{itemize}
+\begin{astuce}
+Tout repose sur la monotonie : plus de clauses $\Rightarrow$ au moins autant de couverture.
+\end{astuce}
+\end{bloc}
+\end{minipage}
+
+\vspace{4pt}
+
+% ================= LIGNE 2 =================
+\begin{minipage}[t]{0.5\textwidth}
+\begin{bloc}{\num{4}Lemma : sound pruning}
+\textbf{Définitions.} $H'$ est une \textbf{generalisation} de $H$ si $H'\models H$ ; une \textbf{specialisation} de $H$ si $H\models H'$.\par\vspace{2pt}
+\textbf{(a)} Si $H$ couvre un négatif $e^-$, toute généralisation $H'$ le couvre aussi $\Rightarrow$ $H'$ est \emph{incohérente}, pas une solution.\par\vspace{2pt}
+\textbf{(b)} Si $H$ rate un positif $e^+$, toute spécialisation $H'$ le rate aussi $\Rightarrow$ $H'$ est \emph{incomplète}, pas une solution.\par\vspace{2pt}
+\textbf{Preuve} : $H'\models H$ et $\mathcal{B}\cup H\models e$ donnent $\mathcal{B}\cup H'\models e$ (a). $H\models H'$ et $\mathcal{B}\cup H'\models e$ donnent $\mathcal{B}\cup H\models e$ (b, par contraposée).
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\begin{bloc}{\num{5}Theorems}
+\textbf{Termination.} Chaque tour, $H_t$ est interdit (il est sa propre généralisation et spécialisation). Donc $\le|\mathcal{H}|$ tours.\par\vspace{3pt}
+\textbf{Completeness of the search.} Soit $S$ une solution de $\mathcal{H}$. Par le lemme, $S$ n'est jamais interdite. Donc le générateur ne renvoie jamais $\bot$. Comme la boucle termine, elle s'arrête sur le test (ALL, NONE) : elle renvoie une solution.\par\vspace{3pt}
+\textbf{Size-minimality} (si le générateur procède par taille croissante) : les tailles inférieures sont épuisées sans solution, donc la solution renvoyée est de taille minimale.
+\end{bloc}
+\end{minipage}
+
+\vspace{4pt}
+
+% ================= LIGNE 3 =================
+\begin{minipage}[t]{0.52\textwidth}
+\begin{bloc}{\num{6}On Trains (centralisé)}
+{\scriptsize
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}l l@{}}
+Initial space & 1433 programs (sizes 3--6)\\
+By size & 6 / 29 / 185 / 1213\\
+Rounds & 48 (47 failures + 1 solution)\\
+Solution & size 6, found at round 48\\
+\end{tabular}}\par\vspace{2pt}
+\footnotesize Seuls 48 programmes sur 1433 sont testés : les contraintes élaguent tout le reste sans le tester.
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.46\textwidth}
+\begin{bloc}{\num{7}Pitfalls (les pièges)}
+\begin{itemize}
+  \item \textbf{Les contraintes ne disent pas ``va par là''} : elles disent ``pas par là''. Les spécialisations d'un programme trop général restent possibles.
+  \item \textbf{Redundancy} : vient d'une analyse séparée (Morel et al.), pas du lemme ci-contre.
+  \item \textbf{Implémentation} : Popper n'élague qu'une partie sûre des familles (par exemple $\theta$ injectif, spécialisations à une clause).
+  \item \textbf{Bruit} : la preuve suppose des exemples sans bruit.
+\end{itemize}
+\end{bloc}
+\end{minipage}
+
+\vspace{5pt}
+
+\begin{tcolorbox}[colback=marine, colframe=marine, arc=0pt, boxrule=0pt,
+  halign=center, top=3pt, bottom=3pt]
+\color{white}\small Popper never prunes a solution, and it prunes at least one program per round: it must find a solution if there is one.
+\end{tcolorbox}
+
+% =====================================================================
+%                    PAGES DÉTAILLÉES
+% =====================================================================
+\detailpages
+
+{\fontsize{24}{26}\selectfont\bfseries\textcolor{marine}{POPPER}~CENTRALISÉ}\\[2pt]
+{\normalsize La boucle \EN{generate-test-constrain}{générer-tester-contraindre} et les preuves qui expliquent pourquoi elle est correcte.
+Les termes de théorie sont donnés en anglais (en \textbf{gras}).}
+
+% ---------------------------------------------------------------- 1
+\titrebox{1}{The ILP problem (le problème)}
+Un problème ILP est un quadruplet $(\mathcal{B},E^+,E^-,\mathcal{H})$ :
+\begin{itemize}
+  \item $\mathcal{B}$ : le \EN{background knowledge}{connaissances de fond}, un ensemble fini de faits et de règles (sur Trains : \texttt{has\_car}, \texttt{has\_load}, \texttt{short}, \texttt{long}\ldots).
+  \item $E^+$, $E^-$ : \EN{positive and negative examples}{exemples positifs et négatifs}, ici 5 et 5 atomes \texttt{f(t\ldots)}.
+  \item $\mathcal{H}$ : l'\EN{hypothesis space}{espace d'hypothèses}, fini, défini par le \EN{language bias}{biais de langage}
+        (\texttt{bias.pl} : \texttt{max\_clauses(3)}, \texttt{max\_vars(5)}, \texttt{max\_body(6)}, types, directions).
+\end{itemize}
+\textbf{Couverture} (\EN{coverage}{couverture}) : $H$ couvre $e$ si $\mathcal{B}\cup H\models e$.\par\vspace{2pt}
+\textbf{Solution} : une hypothèse $H\in\mathcal{H}$ qui est \EN{complete}{complète} (couvre tous les positifs) et \EN{consistent}{cohérente} (ne couvre aucun négatif).
+C'est exactement l'issue (ALL, NONE).
+
+% ---------------------------------------------------------------- 2
+\titrebox{2}{The three steps (les trois étapes)}
+
+\st{Generate : le générateur ASP}
+Popper charge dans \texttt{clingo} trois morceaux : \texttt{alan.pl} (ce qu'est un programme bien formé, identique pour tous les problèmes),
+\texttt{bias.pl} (les faits du problème) et les contraintes apprises. Un \EN{model}{modèle} ASP correspond à un programme valide.
+On avance par taille croissante avec \texttt{size\_in\_literals(n)}. Le solveur est en \EN{multi-shot}{multi-coup} : il est chargé une fois, et les contraintes y sont ajoutées à chaque tour.\par\vspace{2pt}
+Sur Trains : espace initial de 1433 programmes (6 / 29 / 185 / 1213 aux tailles 3 à 6).
+
+\st{Test : Prolog}
+Le programme est chargé avec le BK, et pour chaque exemple Prolog essaie de prouver le but (résolution SLD, fiche~1), avec un \EN{timeout}{délai maximal}.
+On obtient TP, FN, FP, TN puis l'issue $(\varepsilon^+,\varepsilon^-)$.
+
+\st{Constrain : les contraintes}
+De $(H,\text{issue})$ on dérive des contraintes ASP qui \EN{prune}{élaguent} l'espace. Elles sont instanciées (\EN{grounding}{instanciation}) puis ajoutées au solveur.
+
+% ---------------------------------------------------------------- 3
+\titrebox{3}{Outcome and constraints (issue et contraintes)}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}l l L{5.2cm} L{5.2cm}@{}}
+$\varepsilon^+$ & $\varepsilon^-$ & \textbf{Constraints derived} & \textbf{Why}\\\hline
+NONE & NONE & Specialisation + Redundancy & rien n'est couvert : les spécialisations ne couvrent pas plus\\
+NONE & SOME & Specialisation + Redundancy + Generalisation & rien de positif, mais des négatifs couverts\\
+SOME & NONE & Specialisation & incomplet, cohérent\\
+SOME & SOME & Specialisation + Generalisation & incomplet et incohérent\\
+ALL & SOME & Generalisation & complet, incohérent\\
+ALL & NONE & \textbf{Solution found} & on s'arrête\\
+\end{tabular}
+\ce{\textbf{Spec} dès que $\varepsilon^+\neq\mathit{ALL}$ ; \textbf{Gen} dès que $\varepsilon^-=\mathit{SOME}$. Les contraintes disent ``pas par là'', jamais ``va par là''.}
+
+\st{Un exemple réel : le programme \#1 \texttt{f(A) :- has\_car(A,B), short(B).}}
+Il couvre une partie des positifs et des négatifs : issue (SOME, SOME) (comptes détaillés dans la fiche~2). Popper ajoute alors des règles ASP instanciées, dont une définition et deux interdictions (forme simplifiée) :
+\begin{moi}\footnotesize\ttfamily
+included\_clause(fAhas\_carABshortB,Cl) :- head\_literal(Cl,f,1,(A,)),\\
+\hspace*{2em} body\_literal(Cl,short,1,(B,)), body\_literal(Cl,has\_car,2,(A,B)), \ldots\\[2pt]
+\% generalisation\\
+:- included\_clause(fAhas\_carABshortB,C0), body\_size(C0,2), \ldots\\
+\% specialisation\\
+:- included\_clause(fAhas\_carABshortB,C0), \ldots, not clause(1)
+\end{moi}
+La règle \texttt{included\_clause} est un \textbf{détecteur} (une définition, sans \texttt{:-} en tête). Les lignes qui commencent par \texttt{:-} sont les \textbf{interdictions}.
+
+% ---------------------------------------------------------------- 4
+\titrebox{4}{Generalisation and specialisation (via entailment)}
+\begin{enonce}{Definition (Generalisation, Specialisation)}
+Soient $H,H'$ deux hypothèses. $H'$ est une \EN{generalisation}{généralisation} de $H$ si $H'\models H$.
+$H'$ est une \EN{specialisation}{spécialisation} de $H$ si $H\models H'$.
+\end{enonce}
+Intuition : ajouter une clause à un programme (le \emph{généraliser}) ne retire aucune conséquence ; ajouter un littéral dans une clause (la \emph{spécialiser})
+n'en ajoute pas.\par\vspace{2pt}
+\textbf{Mise en garde.} Vérifie la formulation exacte dans l'article de Cropper et Morel (Popper, 2021) : certaines présentations passent par la
+\EN{$\theta$-subsumption}{$\theta$-subsomption} ($c_1\theta\subseteq c_2$). L'implémentation de Popper utilise une version plus stricte (\texttt{AllDifferent} : $\theta$ injectif sur les variables).
+Les deux sont \emph{sûres} : elles n'élaguent qu'un sous-ensemble de ce que la définition autorise.
+
+% ---------------------------------------------------------------- 5
+\titrebox{5}{Lemma 1 (monotonicity of coverage)}
+\begin{enonce}{Lemma 1}
+Soit $e$ un exemple. (a) Si $H'$ est une généralisation de $H$ et $\mathcal{B}\cup H\models e$, alors $\mathcal{B}\cup H'\models e$.
+(b) Si $H'$ est une spécialisation de $H$ et $\mathcal{B}\cup H'\models e$, alors $\mathcal{B}\cup H\models e$.
+\end{enonce}
+\textbf{Proof.} (a) $H'\models H$, donc tout modèle de $\mathcal{B}\cup H'$ est un modèle de $\mathcal{B}\cup H$, qui satisfait $e$.
+(b) $H\models H'$, donc tout modèle de $\mathcal{B}\cup H$ est un modèle de $\mathcal{B}\cup H'$, qui satisfait $e$. \hfill $\square$
+
+% ---------------------------------------------------------------- 6
+\titrebox{6}{Lemma 2 (sound pruning)}
+\begin{enonce}{Lemma 2 (Sound Pruning)}
+Soit $H$ un programme testé. (a) Si $\varepsilon^-(H)=\mathit{SOME}$, toute généralisation de $H$ est incohérente. (b) Si $\varepsilon^+(H)\neq\mathit{ALL}$, toute spécialisation de $H$ est incomplète.
+Donc aucune solution n'est jamais élaguée par une contrainte de généralisation ou de spécialisation.
+\end{enonce}
+\textbf{Proof.} (a) Il existe un négatif $e^-$ avec $\mathcal{B}\cup H\models e^-$ ; par le Lemme 1(a), toute généralisation $H'$ de $H$ vérifie $\mathcal{B}\cup H'\models e^-$, donc couvre un négatif.
+(b) Il existe un positif $e^+$ avec $\mathcal{B}\cup H\not\models e^+$ ; si une spécialisation $H'$ de $H$ vérifiait $\mathcal{B}\cup H'\models e^+$, le Lemme 1(b) donnerait $\mathcal{B}\cup H\models e^+$, contradiction. Donc $H'$ rate $e^+$ : elle est incomplète.
+Une solution est complète et cohérente : elle ne peut être ni dans (a) ni dans (b). \hfill $\square$
+
+\st{Pourquoi la table des contraintes est cohérente avec ce lemme}
+\begin{itemize}
+  \item $\varepsilon^+\in\{\mathit{NONE},\mathit{SOME}\}$ $\Rightarrow$ $\varepsilon^+\neq\mathit{ALL}$ $\Rightarrow$ contrainte de \textbf{spécialisation}.
+  \item $\varepsilon^-=\mathit{SOME}$ $\Rightarrow$ contrainte de \textbf{généralisation}.
+  \item Les contraintes de \textbf{redundancy} (cas $\varepsilon^+=\mathit{NONE}$) viennent d'une autre analyse (Morel et al.) : \emph{elles ne sont pas prouvées ici}.
+\end{itemize}
+
+% ---------------------------------------------------------------- 7
+\titrebox{7}{Theorems (termination, completeness of the search)}
+\begin{enonce}{Theorem 1 (Termination)}
+La boucle de Popper s'arrête après au plus $|\mathcal{H}|$ tours.
+\end{enonce}
+\textbf{Proof.} À chaque tour non terminal, l'issue n'est pas (ALL, NONE), donc $\varepsilon^+\neq\mathit{ALL}$ ou $\varepsilon^-=\mathit{SOME}$. Dans le premier cas la contrainte de spécialisation interdit $H_t$ (qui est sa propre spécialisation, car $H_t\models H_t$) ; dans le second, celle de généralisation l'interdit. Le générateur ne propose que des programmes non interdits : $H_t$ ne reviendra pas. Comme $\mathcal{H}$ est fini, il y a au plus $|\mathcal{H}|$ tours. \hfill $\square$
+
+\begin{enonce}{Theorem 2 (Completeness of the search)}
+(i) Si Popper renvoie $H$, alors $H$ est une solution. (ii) S'il existe une solution dans $\mathcal{H}$, Popper en renvoie une.
+\end{enonce}
+\textbf{Proof.} (i) Popper ne renvoie que quand l'issue est (ALL, NONE), c'est-à-dire quand $H$ est complète et cohérente.
+(ii) Soit $S$ une solution. Par le Lemme 2, $S$ n'est jamais élaguée ; elle reste donc disponible pour le générateur, qui ne renvoie jamais $\bot$. Par le Théorème 1 la boucle termine ; la seule façon de terminer sans $\bot$ est de renvoyer sur l'issue (ALL, NONE), c'est-à-dire de renvoyer une solution (pas forcément $S$). \hfill $\square$
+
+\begin{moi}
+\textbf{Remarque (taille minimale).} Si le générateur propose les programmes par taille non décroissante, tous les programmes de taille inférieure à celle de la solution renvoyée ont été testés ou élagués, et, par le Lemme 2, aucun d'eux n'était une solution : la solution renvoyée est de \textbf{taille minimale}. Sur Trains, les tailles 3, 4 et 5 sont épuisées avant la solution de taille 6.
+\end{moi}
+
+% ---------------------------------------------------------------- 8
+\titrebox{8}{Lien avec FedPopper}
+\begin{itemize}
+  \item Popper centralisé = Algorithme~1 de FedPopper avec \textbf{un seul client} qui détient le dataset poolé.
+  \item Les preuves de cette fiche (lemme et théorèmes) \textbf{ne changent pas} en fédéré : elles portent sur $(H_t,\text{issue},\mathcal{C}_t)$.
+  \item La fiche~2 montre que FedPopper calcule \textbf{la même issue} à chaque tour, donc hérite de ces propriétés.
+\end{itemize}
+
+% ---------------------------------------------------------------- 9
+\titrebox{9}{Trains : la trace complète}
+\begin{tabular}{@{}l r@{}}
+\textbf{Size of programs} & \textbf{Programs in initial space}\\\hline
+3 & 6\\
+4 & 29\\
+5 & 185\\
+6 & 1213\\
+\textbf{Total} & \textbf{1433}\\
+\end{tabular}
+\ce{48 programmes testés (47 échecs puis la solution) : tout le reste de l'espace est élagué par les contraintes. La solution est de taille 6. Le détail par taille des programmes testés n'est pas reproduit ici : à relever dans le log de Popper si tu veux le citer.}
+\textbf{Solution :} \texttt{f(A) :- has\_car(A,B), has\_car(A,C), long(C), three\_wheels(B), two\_wheels(C).}
+(5 positifs couverts, aucun négatif.)
+
+% ---------------------------------------------------------------- 10
+\titrebox{10}{Reviewer questions (questions de relecteur)}
+
+\st{``Popper peut-il éliminer une solution par erreur ?''}
+\begin{dire}
+Non : le lemme d'élagage sûr montre que les contraintes de généralisation et de spécialisation n'éliminent que des programmes incohérents ou incomplets.
+\end{dire}
+\begin{direEN}
+No: the sound-pruning lemma shows that generalisation and specialisation constraints only remove programs that are inconsistent or incomplete.
+\end{direEN}
+
+\st{``Pourquoi la boucle termine-t-elle ?''}
+\begin{dire}
+L'espace d'hypothèses est fini et chaque tour interdit au moins l'hypothèse testée.
+\end{dire}
+\begin{direEN}
+The hypothesis space is finite and each round forbids at least the tested hypothesis.
+\end{direEN}
+
+\st{``Et avec du bruit dans les données ?''}
+\begin{dire}
+Les preuves supposent des exemples sans bruit : un positif mal étiqueté rend l'élagage par spécialisation faux. Le cas bruité demande un autre critère (par exemple MDL).
+\end{dire}
+\begin{direEN}
+The proofs assume noise-free examples: a mislabeled positive makes specialisation pruning unsound. The noisy case needs another criterion (for instance MDL).
+\end{direEN}
+
+\vspace{8pt}
+\begin{tcolorbox}[colback=marine, colframe=marine, arc=0pt, boxrule=0pt,
+  halign=center, top=4pt, bottom=4pt]
+\color{white}\small Never prune a solution + prune at least one program per round = terminate with a solution if one exists.
+\end{tcolorbox}
+
+\end{document}

@@ -71,6 +71,32 @@ OUTCOME_ENCODING = {
 }
 
 
+
+def sanitize_bk_for_target(bk_file, bias_file, output_directory):
+    """Return a copy of bk_file without one-line clauses defining a head
+    predicate of the bias (the learned target). Returns bk_file unchanged if
+    there is nothing to remove."""
+    try:
+        bias_text = open(bias_file).read()
+        heads = set(re.findall(r"head_pred\(\s*([a-z][A-Za-z0-9_]*)\s*,", bias_text))
+        if not heads:
+            return bk_file
+        pattern = re.compile(r"^\s*(%s)\s*\(" % "|".join(map(re.escape, heads)))
+        kept, removed = [], []
+        for line in open(bk_file).read().splitlines():
+            (removed if pattern.match(line) else kept).append(line)
+        if not removed:
+            return bk_file
+        out = Path(output_directory)
+        out.mkdir(parents=True, exist_ok=True)
+        clean = out / "bk_sanitized.pl"
+        clean.write_text("\n".join(kept) + "\n")
+        print(f"[Client] Removed {len(removed)} clause(s) defining the target "
+              f"predicate from the background knowledge: {removed[:3]}", flush=True)
+        return str(clean)
+    except OSError:
+        return bk_file
+
 def parse_arguments() -> argparse.Namespace:
     """
     Read the client configuration from the command line.
@@ -182,6 +208,7 @@ class FlowerClient(fl.client.NumPyClient):
 
         self.current_rules = []
 
+        self.last_confusion_matrix = None
         self.num_evaluations = 0
         self.total_eval_wall = 0.0
         self.total_eval_cpu = 0.0
@@ -562,6 +589,11 @@ def main() -> None:
     print(f"Flower server  : {args.server_address}", flush=True)
 
     bk_file, ex_file, bias_file = load_kbpath(dataset_path)
+
+    # A background-knowledge file must not define the target predicate: once
+    # consulted, Prolog treats it as static and refuses to assert hypotheses
+    # for it (permission_error). Drop such clauses from a sanitized copy.
+    bk_file = sanitize_bk_for_target(bk_file, bias_file, output_directory)
 
     import os as _os
 

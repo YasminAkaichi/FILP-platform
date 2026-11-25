@@ -16,11 +16,11 @@ CLIENT_CMD = ["python3", "client1.py"]      # <-- client
 NB_RUNS = 100
 NB_CLIENTS = 3
 #/Users/yasmineakaichi/Downloads/Bach-Popper-dist-v1/trains/bias.pl
-PATH_DIR_SERVER = "trains"
+PATH_DIR_SERVER = "trains10"
 PATH_DIR_CLIENTS = [
-    "trains_part1",
-    "trains_part2",
-    "trains_part3",
+    "trains10_part1",
+    "trains10_part2",
+    "trains10_part3",
 ]
 
 RUN_TIMEOUT_SEC = 300  # stop un run si ça dépasse 5 min

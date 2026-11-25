@@ -32,6 +32,35 @@ if str(POPPER_CORE_PATH) not in sys.path:
     sys.path.insert(0, str(POPPER_CORE_PATH))
 
 
+def _bk_without_target_clauses(dataset_directory: Path, output_directory: Path) -> str:
+    """Path of a bk.pl without one-line clauses that define a learned target
+    predicate (head_pred in bias.pl). Prolog treats such a predicate as static
+    once consulted, and Popper 1.1.0 then fails when asserting hypotheses for
+    it (permission_error). Same cleaning as the Collaboration client."""
+    import re
+    bk_path = dataset_directory / "bk.pl"
+    try:
+        heads = set(re.findall(
+            r"head_pred\(\s*([a-z][A-Za-z0-9_]*)\s*,",
+            (dataset_directory / "bias.pl").read_text(),
+        ))
+        if not heads:
+            return str(bk_path)
+        pattern = re.compile(r"^\s*(%s)\s*\(" % "|".join(map(re.escape, heads)))
+        kept, removed = [], []
+        for line in bk_path.read_text().splitlines():
+            (removed if pattern.match(line) else kept).append(line)
+        if not removed:
+            return str(bk_path)
+        clean = output_directory / "bk_sanitized.pl"
+        clean.write_text("\n".join(kept) + "\n")
+        print(f"[Centralized] Removed {len(removed)} clause(s) defining the target "
+              f"predicate from the background knowledge: {removed[:3]}", flush=True)
+        return str(clean)
+    except OSError:
+        return str(bk_path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Centralized (non-federated) Popper run")
     parser.add_argument("--dataset", required=True, help="Path to the dataset directory (exs.pl / bk.pl / bias.pl)")
@@ -44,12 +73,18 @@ def main() -> None:
     output_directory.mkdir(parents=True, exist_ok=True)
 
     from popper.util import Settings
+    import popper.loop as popper_loop
     from popper.loop import learn_solution
+
+    # Evaluate clauses in the order of the generator, like the federated
+    # clients do (see engines/centralized/ordered_tester.py).
+    from engines.centralized.ordered_tester import OrderedTester
+    popper_loop.Tester = OrderedTester
 
     settings = Settings(
         bias_file=str(dataset_directory / "bias.pl"),
         ex_file=str(dataset_directory / "exs.pl"),
-        bk_file=str(dataset_directory / "bk.pl"),
+        bk_file=_bk_without_target_clauses(dataset_directory, output_directory),
         timeout=args.timeout,
         # Same limit as the federated approaches (set by the launcher).
         eval_timeout=float(__import__("os").environ.get("FILP_EVAL_TIMEOUT", "0.001")),

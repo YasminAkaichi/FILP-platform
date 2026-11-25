@@ -5,7 +5,9 @@ from core.results import ClientResult, ServerResult, ConsensusResult
 import socket
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from pathlib import Path
 from database.repository import ExperimentRepository
 from core.experiment import ExperimentConfig
@@ -37,6 +39,32 @@ def search_environment() -> dict:
     environment.setdefault("FILP_EVAL_TIMEOUT", FEDERATED_EVAL_TIMEOUT)
     return environment
 DATASETS_DIR = PROJECT_ROOT / "datasets"
+
+
+class _StderrTee:
+    """Copy a subprocess' stderr to ours and keep its last lines, so that a
+    crash can be reported in the UI instead of only in the terminal."""
+
+    def __init__(self, process: subprocess.Popen, keep: int = 12) -> None:
+        self.tail: deque[str] = deque(maxlen=keep)
+        self._thread = threading.Thread(
+            target=self._pump, args=(process,), daemon=True
+        )
+        self._thread.start()
+
+    def _pump(self, process: subprocess.Popen) -> None:
+        stream = process.stderr
+        if stream is None:
+            return
+        for line in iter(stream.readline, b""):
+            text = line.decode("utf-8", errors="replace")
+            sys.stderr.write(text)
+            sys.stderr.flush()
+            self.tail.append(text.rstrip())
+
+    def last_lines(self) -> str:
+        return "\n".join(self.tail)
+
 
 
 class ExperimentLauncher:
@@ -247,6 +275,7 @@ class ExperimentLauncher:
 
         processes: list[subprocess.Popen] = []
         client_processes: list[subprocess.Popen] = []
+        client_tees: dict[int, _StderrTee] = {}
 
         if process_tracker is not None:
             # Same list object: appends below are visible to the caller
@@ -319,12 +348,42 @@ class ExperimentLauncher:
                     client_command,
                     cwd=PROJECT_ROOT,
                     env=search_environment(),
+                    stderr=subprocess.PIPE,
                 )
 
+                client_tees[client_id] = _StderrTee(client_process)
                 processes.append(client_process)
                 client_processes.append(client_process)
 
+            # If a client crashes, the server would wait for it forever and
+            # the run would stay "RUNNING". Watch the clients, stop the
+            # server and report the client's own error.
+            client_crash: dict[str, str] = {}
+
+            def _watch_clients() -> None:
+                while server_process.poll() is None:
+                    for watched_id, watched in enumerate(
+                        client_processes, start=1
+                    ):
+                        code = watched.poll()
+                        if code not in (None, 0):
+                            tail = client_tees[watched_id].last_lines()
+                            client_crash["message"] = (
+                                f"Client {watched_id} stopped with exit "
+                                f"code {code}."
+                                + (f"\n\nClient error output:\n{tail}"
+                                   if tail else "")
+                            )
+                            server_process.terminate()
+                            return
+                    time.sleep(0.5)
+
+            threading.Thread(target=_watch_clients, daemon=True).start()
+
             server_return_code = self._wait_for(server_process, control)
+
+            if client_crash:
+                raise RuntimeError(client_crash["message"])
 
             if server_return_code != 0:
                 raise RuntimeError(

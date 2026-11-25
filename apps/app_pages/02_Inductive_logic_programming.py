@@ -91,9 +91,8 @@ COLOR_EMOJI = {
 
 DATASET_BLURBS = {
     "zendo1": "Zendo scene classification — a table of geometric pieces, learn the hidden rule an arrangement must satisfy.",
-    "trains": "The classic Michalski trains — classify eastbound vs westbound trains from their car properties.",
-    "trains1": "Michalski trains, variant 1.",
-    "trains2": "Michalski trains, extended variant with more cars and attributes.",
+    "trains10": "The classic Michalski trains — 10 trains (5 eastbound, 5 westbound) to classify from their car properties.",
+    "trains100": "Michalski trains — 101 generated trains (20 eastbound, 81 westbound).",
     "trains1000": "Michalski trains at scale — 1000 generated trains.",
     "synthesis-sorted": "Program-synthesis style task: learn what makes a list \"sorted\".",
     "iggp-rps": "General Game Playing — Rock-Paper-Scissors legal-move / outcome relations.",
@@ -101,9 +100,8 @@ DATASET_BLURBS = {
 
 SHORT_DATASET_BLURBS = {
     "zendo1": "Geometric scene rules",
-    "trains": "Classic Michalski trains",
-    "trains1": "Michalski trains variant",
-    "trains2": "Extended trains dataset",
+    "trains10": "Classic Michalski trains (10)",
+    "trains100": "Michalski trains (101)",
     "trains1000": "Large-scale trains",
     "synthesis-sorted": "Sorted-list synthesis",
     "iggp-rps": "Rock-paper-scissors relations",

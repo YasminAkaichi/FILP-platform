@@ -1,0 +1,83 @@
+% =====================================================================
+%  Style commun aux fiches (bleu marine + bleu pastel)
+%  Pour changer les couleurs : modifier uniquement ce fichier.
+% =====================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[scaled]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[a4paper,margin=8mm]{geometry}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usepackage{pifont}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{etoolbox}
+\usepackage{needspace}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+% ---------- Couleurs ----------
+\definecolor{marine}{HTML}{3F72B8}   % bleu (plus clair que le marine)
+\definecolor{pastel}{HTML}{BFD6F6}   % bleu pastel
+\definecolor{fond}{HTML}{F4F7FB}
+\definecolor{encre}{HTML}{1F1F1F}
+\definecolor{vert}{HTML}{22A55B}
+\definecolor{rouge}{HTML}{DC2626}
+\pagecolor{fond}
+\color{encre}
+
+% ---------- Styles page de synthèse ----------
+\newtcolorbox{bloc}[2][]{enhanced, colback=white, colframe=pastel,
+  boxrule=0.9pt, arc=0pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  fontupper=\footnotesize\raggedright, #1,
+  before upper={{\large\bfseries\textcolor{marine}{#2}}\par\vspace{2pt}}}
+\newtcolorbox{astuce}{colback=pastel!75, colframe=pastel!75, arc=0pt,
+  boxrule=0pt, left=4pt, right=4pt, top=2pt, bottom=2pt,
+  fontupper=\footnotesize\raggedright}
+\newcommand{\num}[1]{\textcolor{marine}{\textbf{#1.}}~}
+\newcommand{\fl}{\tikz[baseline=-0.6ex]\draw[->,thick](0,0)--(0.4,0);}
+\newcommand{\sous}[1]{\textcolor{marine}{\textbf{#1}}\par}
+\setlist[itemize]{leftmargin=9pt, itemsep=0pt, topsep=1pt, parsep=0pt,
+  label=\textbullet, before=\raggedright}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% Terme anglais (en gras) avec sa traduction française
+\newcommand{\EN}[2]{\textbf{#1}\,{\scriptsize\textcolor{marine}{(#2)}}}
+
+% ---------- Styles pages détaillées ----------
+\newtcolorbox{dire}{enhanced, breakable, colback=pastel!25, colframe=marine,
+  boxrule=0pt, leftrule=3pt, arc=0pt, left=8pt, right=6pt, top=4pt, bottom=4pt,
+  fontupper=\small\itshape, before upper={{\upshape\bfseries\textcolor{marine}{FR}}\enspace}}
+\newtcolorbox{direEN}{enhanced, breakable, colback=vert!6, colframe=vert,
+  boxrule=0pt, leftrule=3pt, arc=0pt, left=8pt, right=6pt, top=4pt, bottom=4pt,
+  fontupper=\small\itshape, before upper={{\upshape\bfseries\textcolor{vert}{EN}}\enspace}}
+\newtcolorbox{pourquoi}{colback=fond, colframe=fond, arc=0pt, boxrule=0pt,
+  left=6pt, right=6pt, top=3pt, bottom=3pt, fontupper=\small}
+\newcommand{\titrebox}[2]{\needspace{10\baselineskip}\vspace{8pt}
+  \begin{tcolorbox}[colback=marine, colframe=marine, arc=0pt, boxrule=0pt,
+    top=4pt, bottom=4pt, left=8pt]
+  \color{white}\Large\bfseries #1.~#2
+  \end{tcolorbox}\vspace{2pt}}
+\newcommand{\ce}[1]{\begin{pourquoi}\textbf{\textcolor{marine}{À retenir :}} #1\end{pourquoi}}
+\newcommand{\st}[1]{\par\needspace{7\baselineskip}\vspace{5pt}{\normalsize\bfseries\textcolor{marine}{#1}}\par\vspace{2pt}}
+\newcommand{\sst}[1]{\par\needspace{5\baselineskip}\vspace{3pt}{\small\bfseries\textcolor{encre}{#1}}\par\vspace{1pt}}
+\newtcolorbox{moi}{colback=pastel!35, colframe=pastel!35, arc=0pt, boxrule=0pt,
+  left=6pt, right=6pt, top=3pt, bottom=3pt, fontupper=\small}
+\newtcolorbox{piege}{colback=rouge!6, colframe=rouge, boxrule=0pt, leftrule=3pt, arc=0pt,
+  left=8pt, right=6pt, top=3pt, bottom=3pt, fontupper=\small}
+% Boîte "énoncé" pour lemmes, propositions, théorèmes
+\newtcolorbox{enonce}[1]{enhanced, breakable, colback=white, colframe=marine,
+  boxrule=0.8pt, arc=0pt, left=8pt, right=8pt, top=4pt, bottom=4pt,
+  fontupper=\small, title={#1}, coltitle=white, colbacktitle=marine,
+  fonttitle=\bfseries\small}
+% Passage à la mise en page détaillée
+\newcommand{\detailpages}{%
+  \newpage
+  \newgeometry{a4paper,margin=15mm}
+  \setlist[itemize]{leftmargin=12pt, itemsep=1pt, topsep=2pt, parsep=0pt,
+    label=\textcolor{marine}{\textbullet}}
+  \small}

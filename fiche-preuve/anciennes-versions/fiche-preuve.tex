@@ -1,0 +1,392 @@
+% Fiche 1 — Comprendre la preuve de la Knowledge Locality (SLD resolution)
+% Compilation : pdflatex fiche-preuve.tex   (a besoin de style-fiche.tex)
+\documentclass[10pt]{article}
+\input{style-fiche}
+
+\begin{document}
+
+% ================= EN-TÊTE =================
+\begin{minipage}[c]{0.64\textwidth}
+  {\fontsize{26}{28}\selectfont\bfseries\textcolor{marine}{PROOF}~CHEAT SHEET 1}\\[1pt]
+  {\small Knowledge Locality --- pourquoi un client avec moins de faits tire la même conclusion}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.34\textwidth}\raggedright
+  \normalsize \textbf{Claim} $\to$ \textbf{Tool} (SLD)\\ $\to$ \textbf{Invariant} $\to$ \textbf{Conclusion}
+\end{minipage}
+
+\vspace{5pt}
+
+% ================= LIGNE 1 =================
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{1}The Lemma (le lemme)}
+\sous{Statement (énoncé)}
+Pour tout exemple $e$ du client $i$ et tout $H$ :\\[2pt]
+\centerline{$\mathcal{B}\cup H\models e \iff \mathcal{B}_i\cup H\models e$}
+\sous{Two directions}
+\begin{itemize}
+  \item $\Leftarrow$ \textbf{easy} : $\mathcal{B}_i\subseteq\mathcal{B}$, ajouter des faits ne retire aucune conclusion (\emph{monotonicity})
+  \item $\Rightarrow$ \textbf{hard} : retirer des faits peut faire perdre une preuve. Il faut montrer que la preuve de $e$ n'utilise \textbf{aucun fait manquant}
+\end{itemize}
+\begin{astuce}
+Le sens difficile : celui où l'on \textbf{enlève} des faits.
+\end{astuce}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{2}The 3 assumptions}
+\begin{itemize}
+  \item \textbf{Example Locality} : chaque exemple est chez un seul client, et sa constante est locale \fl démarre la preuve chez lui
+  \item \textbf{Separated Local Constants} : constantes locales disjointes, aucune dans $\mathcal{R}$ ni $H$ \fl un fait se reconnaît à ses constantes
+  \item \textbf{Directions} : chaque argument \texttt{in} est connu avant l'appel \fl on ne sort jamais de l'exemple
+\end{itemize}
+\begin{astuce}
+Chacune sert à un endroit précis de la preuve (box 5).
+\end{astuce}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{3}SLD in one minute}
+\begin{itemize}
+  \item \textbf{Goal} $\leftarrow e$ : ``$e$ est faux''. On cherche une contradiction.
+  \item \textbf{One step} : choisir un littéral, trouver une clause dont la tête s'unifie, le remplacer par le corps.
+  \item \textbf{Success} : but vide = \textbf{refutation} = preuve de $e$.
+  \item \textbf{Prolog} = SLD + littéral le plus à gauche + profondeur d'abord + backtracking.
+\end{itemize}
+\textbf{Sound} : réfutation $\Rightarrow$ conséquence. \textbf{Complete} : conséquence $\Rightarrow$ réfutation (pour \emph{toute} selection rule).
+\end{bloc}
+\end{minipage}
+
+\vspace{4pt}
+
+% ================= LIGNE 2 =================
+\begin{minipage}[t]{0.5\textwidth}
+\begin{bloc}{\num{4}SLD on \texttt{f(t800)}}
+Clause : \texttt{f(A) :- has\_car(A,B), short(B).}\par\vspace{2pt}
+{\scriptsize
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}l L{3.1cm} L{3.9cm}@{}}
+\textbf{Step} & \textbf{Goal} & \textbf{Action}\\\hline
+0 & \texttt{f(t800)} & clause, \texttt{A=t800}\\
+1 & \texttt{has\_car(t800,B), short(B)} & littéral de gauche : fait \texttt{has\_car(t800,t800\_c1)}, \texttt{B=t800\_c1}\\
+2 & \texttt{short(t800\_c1)} & aucun fait $\to$ échec, backtracking\\
+3 & \texttt{short(t800\_c2)}, \texttt{c3} & même échec\\
+4 & \texttt{short(t800\_c4)} & fait présent $\to$ but \textbf{vide}, preuve\\
+\end{tabular}}
+\vspace{2pt}
+\begin{astuce}
+\texttt{B} sort de \texttt{has\_car} \emph{avant} d'entrer dans \texttt{short} : c'est la \textbf{direction}.
+\end{astuce}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\begin{bloc}{\num{5}The proof in 5 steps}
+\begin{enumerate}[leftmargin=12pt, itemsep=1pt, topsep=1pt]
+  \item $e$ conséquence $\Rightarrow$ (\textbf{completeness}) il existe une réfutation SLD, littéral de gauche, corps écrits dans l'ordre des directions.
+  \item \textbf{Allowed constant for $i$} : locale à $i$, ou écrite dans $\mathcal{R}$ ou $H$. Aucune n'est locale à un autre client (\emph{Separated Local Constants}).
+  \item \textbf{Invariant} : à chaque littéral sélectionné, ses arguments \texttt{in} sont des constantes autorisées pour $i$.
+  \item Un fait utilisé est \textbf{chez $i$} (sinon un autre client aurait une constante autorisée pour $i$). Une règle utilisée est dans $\mathcal{R}\cup H$.
+  \item Même réfutation avec $\mathcal{B}_i\cup H$ $\Rightarrow$ (\textbf{soundness}) $\mathcal{B}_i\cup H\models e$.
+\end{enumerate}
+\end{bloc}
+\end{minipage}
+
+\vspace{4pt}
+
+% ================= LIGNE 3 =================
+\begin{minipage}[t]{0.58\textwidth}
+\begin{bloc}{\num{6}Vocabulary at a glance}
+{\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}L{2.5cm}@{}l@{\ }L{6.2cm}@{}}
+$\models$ (entailment) & \fl & Vrai dans tous les modèles : $e$ découle des clauses\\
+Definite clause & \fl & \texttt{tête :- corps.} avec une seule tête positive\\
+Fact & \fl & Clause sans corps : \texttt{has\_car(t800,t800\_c1).}\\
+Unification & \fl & Rendre deux atomes identiques par une substitution\\
+Refutation & \fl & Suite de pas SLD qui mène au but vide\\
+Selection rule & \fl & Quel littéral on résout (ici : le plus à gauche)\\
+Soundness / Completeness & \fl & Correction / complétude de SLD\\
+Allowed constant & \fl & Locale à $i$ ou écrite dans $\mathcal{R}$, $H$\\
+\end{tabular}}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.4\textwidth}
+\begin{bloc}{\num{7}Pitfalls (les pièges)}
+\begin{itemize}
+  \item \textbf{Sans directions} : \texttt{f(A) :- has\_car(B,C), short(C).} prend n'importe quel wagon, y compris d'un autre client $\to$ le centralisé prouve, le client non.
+  \item \textbf{Constante partagée} : si deux clients ont la même constante, un fait de l'un devient atteignable depuis l'autre.
+  \item \textbf{Règle partagée avec constante locale} : casse l'argument ``allowed''.
+  \item \textbf{Mauvais ordre} : \texttt{short(B), has\_car(A,B)} appelle \texttt{short} avec \texttt{B} libre.
+\end{itemize}
+\end{bloc}
+\end{minipage}
+
+\vspace{5pt}
+
+\begin{tcolorbox}[colback=marine, colframe=marine, arc=0pt, boxrule=0pt,
+  halign=center, top=3pt, bottom=3pt]
+\color{white}\small A proof = clear assumptions + a tool (SLD) + an invariant checked at every step.
+\end{tcolorbox}
+
+% =====================================================================
+%                    PAGES DÉTAILLÉES
+% =====================================================================
+\detailpages
+
+{\fontsize{24}{26}\selectfont\bfseries\textcolor{marine}{COMPRENDRE}~LA PREUVE}\\[2pt]
+{\normalsize Du plus simple au plus technique. Exemple fil rouge : \texttt{t800} (positif, client~2)
+et \texttt{t184} (négatif, client~3) du dataset Trains. Les termes de théorie sont donnés en anglais
+(\textcolor{marine}{\textbf{gras}}), avec leur traduction entre parenthèses.}
+
+% ---------------------------------------------------------------- 1
+\titrebox{1}{Logical building blocks (les briques logiques)}
+
+\st{Definite clause, fact, goal}
+\begin{itemize}
+  \item \EN{Fact}{fait} : une clause sans corps. \texttt{has\_car(t800,t800\_c1).}
+  \item \EN{Rule}{règle} : \texttt{tête :- corps.} Se lit ``si le corps est vrai, alors la tête l'est''.
+        \texttt{f(A) :- has\_car(A,B), short(B).} : un train $A$ est positif s'il a un wagon $B$ court.
+  \item \EN{Definite clause}{clause définie} : une règle avec une seule tête positive (pas de négation).
+        Les hypothèses de Popper dans la thèse sont de ce type.
+  \item \EN{Goal}{but} : ce qu'on veut prouver. \texttt{?- f(t800).} Écrit $\leftarrow f(\texttt{t800})$ en logique.
+\end{itemize}
+
+\st{Entailment $\models$ and monotonicity}
+$\mathcal{B}\cup H\models e$ veut dire : $e$ est vrai dans \textbf{tous} les modèles de $\mathcal{B}\cup H$.
+La logique des clauses définies est \EN{monotone}{monotone} : si $A\models e$ et $A\subseteq A'$, alors $A'\models e$.
+\ce{c'est exactement le sens facile du lemme : le client a $\mathcal{B}_i\subseteq\mathcal{B}$.}
+
+% ---------------------------------------------------------------- 2
+\titrebox{2}{Unification (l'unification)}
+\textbf{Unifier} deux atomes, c'est trouver une \EN{substitution}{substitution} $\theta$ qui les rend identiques.
+\begin{center}
+\begin{tabular}{@{}l l@{}}
+atome du but & \texttt{has\_car(t800, B)}\\
+fait du BK & \texttt{has\_car(t800, t800\_c4)}\\
+substitution & $\theta=\{\texttt{B}/\texttt{t800\_c4}\}$ \quad (après application, les deux atomes sont identiques)\\
+\end{tabular}
+\end{center}
+Contre-exemple : \texttt{has\_car(t800,B)} et \texttt{has\_car(t184,t184\_c1)} ne s'unifient pas, car
+\texttt{t800} $\neq$ \texttt{t184}.
+\ce{c'est l'unification qui empêche un but sur \texttt{t800} d'utiliser un fait sur \texttt{t184} \emph{tant que l'argument d'entrée est lié}.}
+
+% ---------------------------------------------------------------- 3
+\titrebox{3}{SLD resolution : la méthode de preuve de Prolog}
+La résolution SLD est la procédure qu'utilise Prolog pour prouver un but. On part du but que l'on veut
+prouver, on cherche une clause dont la tête s'unifie avec lui, et on remplace le but par le corps de la
+clause, que l'on prouve à son tour, ainsi de suite.\par\vspace{3pt}
+(\textbf{SLD} = \textbf{S}elective \textbf{L}inear resolution for \textbf{D}efinite clauses.)
+
+\st{Sur l'exemple}
+\begin{itemize}
+  \item but : \texttt{f(t800)}
+  \item on utilise la clause \texttt{f(A) :- has\_car(A,B), short(B)} avec \texttt{A = t800}, et le but devient
+        \texttt{has\_car(t800,B), short(B)}
+  \item on résout \texttt{has\_car(t800,B)} avec un fait, par exemple \texttt{has\_car(t800,t800\_c4)}, et il reste
+        \texttt{short(t800\_c4)}
+  \item on résout \texttt{short(t800\_c4)} avec le fait correspondant, et il ne reste plus rien (le \textbf{but vide})
+\end{itemize}
+
+\st{La même chose, étape par étape, avec le backtracking}
+\begin{tabular}{@{}l L{5cm} L{9cm}@{}}
+\textbf{Step} & \textbf{Current goal} & \textbf{What happens}\\\hline
+0 & $\leftarrow$ \texttt{f(t800)} & clause de $H$, \texttt{A=t800}\\
+1 & $\leftarrow$ \texttt{has\_car(t800,B), short(B)} & on résout \texttt{has\_car}, premier fait possible : \texttt{B=t800\_c1}\\
+2 & $\leftarrow$ \texttt{short(t800\_c1)} & aucun fait \texttt{short(t800\_c1)} : échec, \textbf{backtracking}\\
+3 & $\leftarrow$ \texttt{short(t800\_c2)}, puis \texttt{c3} & même échec\\
+4 & $\leftarrow$ \texttt{short(t800\_c4)} & fait présent : but \textbf{vide}, \textbf{succès}\\
+\end{tabular}
+
+\st{Sur \texttt{f(t184)} (négatif, couvert par erreur)}
+\texttt{has\_car(t184,B)} donne \texttt{B=t184\_c1}, puis \texttt{short(t184\_c1)} est un fait : succès immédiat.
+Le programme couvre ce négatif (un \EN{false positive}{faux positif}).
+\ce{dans les deux cas, chaque fait utilisé parle \emph{uniquement} du train testé. C'est ce qu'on va généraliser.}
+
+% ---------------------------------------------------------------- 4
+\titrebox{4}{``Refutation of $\leftarrow e$'' (réfutation)}
+Prouver $e$ revient à montrer que l'ajout de sa négation, $\leftarrow e$ (``$e$ est faux''), mène à une
+contradiction. Une \EN{SLD refutation}{réfutation SLD} est donc une suite de pas de résolution qui part de
+$\leftarrow e$ et arrive au but vide. C'est exactement la dérivation de la section précédente.\par\vspace{3pt}
+Dire qu'il y a une réfutation de $\leftarrow e$ dans $\mathcal{B}\cup H$ veut dire que Prolog peut prouver $e$
+avec ces clauses.
+\ce{réfutation = succès de Prolog. ``Il existe une réfutation'' = ``il existe un chemin de preuve qui réussit''.}
+
+% ---------------------------------------------------------------- 5
+\titrebox{5}{``By completeness of SLD resolution''}
+\st{Completeness (complétude) et soundness (correction)}
+\begin{itemize}
+  \item \EN{Soundness}{correction} : s'il existe une réfutation SLD de $\leftarrow e$ dans $P$, alors $P\models e$.
+  \item \EN{Completeness}{complétude} : si $P\models e$, alors il existe une réfutation SLD de $\leftarrow e$ dans $P$.
+        Cela reste vrai pour \textbf{n'importe quelle} selection rule (littéral de gauche, de droite\ldots).
+\end{itemize}
+La complétude dit : si $\mathcal{B}\cup H\models e$ (c'est vrai logiquement), alors il existe une réfutation
+SLD de $\leftarrow e$. On a donc le droit de remplacer la conséquence logique (difficile à manipuler) par une
+\textbf{dérivation concrète}, dont on peut inspecter chaque pas. C'est ce qui permet de suivre les faits
+utilisés, un par un.
+
+\st{Où on s'en sert dans la preuve}
+\begin{tabular}{@{}L{3.2cm}L{13.2cm}@{}}
+\textbf{Completeness} & Au début : $\mathcal{B}\cup H\models e$ est une propriété sémantique, difficile à inspecter. La complétude la remplace par une dérivation concrète, dont on peut examiner chaque clause utilisée.\\[3pt]
+\textbf{Soundness} & À la fin : on a une réfutation dans $\mathcal{B}_i\cup H$, et la correction nous dit que cela suffit pour conclure $\mathcal{B}_i\cup H\models e$.\\
+\end{tabular}
+\ce{la complétude sert à \emph{ouvrir} la preuve, la correction à la \emph{fermer}.}
+
+% ---------------------------------------------------------------- 6
+\titrebox{6}{``Always selects the leftmost literal''}
+À chaque pas, le but contient plusieurs littéraux (par exemple \texttt{has\_car(t800,B), short(B)}), et il faut
+choisir lequel on résout en premier. C'est la \EN{selection rule}{règle de sélection}. Ici on choisit toujours
+le littéral le plus à gauche, comme Prolog.\par\vspace{3pt}
+La complétude de SLD est valable pour \textbf{n'importe quelle} règle de sélection, donc on peut imposer celle
+de notre choix sans perdre de réfutation.
+
+\st{Selection rule $\neq$ search rule}
+\begin{itemize}
+  \item \textbf{Selection rule} : \emph{quel littéral} on résout dans le but. Ici : le plus à gauche.
+  \item \textbf{Search rule} : \emph{dans quel ordre on essaie les clauses}. Prolog : profondeur d'abord, avec backtracking.
+        Elle peut boucler, mais ce n'est pas un problème pour nous : on a seulement besoin qu'une réfutation \emph{existe}.
+\end{itemize}
+
+% ---------------------------------------------------------------- 7
+\titrebox{7}{``With clause bodies written in the order required by Assumption 3''}
+Le choix ``le plus à gauche'' n'a de sens que si l'ordre dans lequel les littéraux sont écrits est le bon.
+L'\EN{Assumption}{hypothèse} 3 (\textbf{Directions}) dit que chaque argument \texttt{in} d'un littéral est soit
+une variable \texttt{in} de la tête, soit une variable \texttt{out} d'un littéral précédent. Pour que
+``précédent'' ait un sens, on écrit les corps dans cet ordre :
+\begin{moi}
+\texttt{f(A) :- has\_car(A,B), short(B).}\quad \textit{\% B est produit par has\_car avant d'être lu par short}
+\end{moi}
+Avec ce choix, le littéral le plus à gauche a toujours ses entrées déjà connues quand on le résout. C'est ce
+que la preuve du lemme exploite : quand on sélectionne un littéral, ses arguments \texttt{in} sont des
+\EN{allowed constants}{constantes autorisées}.
+\begin{piege}
+\textbf{Dans le mauvais ordre} (\texttt{short(B), has\_car(A,B)}), \texttt{short(B)} serait appelé avec
+\texttt{B} \emph{inconnu} et pourrait s'unifier avec n'importe quel fait \texttt{short(\ldots)}, y compris
+ceux des autres clients.
+\end{piege}
+\ce{``leftmost'' + ``bodies in the order of the directions'' garantissent que chaque littéral est appelé
+avec ses entrées déjà liées à l'exemple.}
+
+% ---------------------------------------------------------------- 8
+\titrebox{8}{The proof, line by line (la preuve, ligne par ligne)}
+
+\st{Definitions used in the proof}
+\textbf{Allowed constant for client $i$} (constante autorisée) : une constante locale à $i$, ou écrite dans
+$\mathcal{R}$ ou dans $H$. Par \textbf{Separated Local Constants}, aucune constante autorisée pour $i$ n'est
+locale à un autre client $j$.
+
+\st{Invariant}
+\begin{dire}
+Chaque fois qu'un littéral est sélectionné, ses arguments \texttt{in} sont des constantes autorisées pour $i$,
+et chaque valeur qu'il calcule est aussi une constante autorisée pour $i$.
+\end{dire}
+On le prouve \textbf{par récurrence} (\EN{by induction}{par récurrence}) \textbf{sur la longueur de la dérivation}.
+
+\st{Base case (cas de base)}
+Le but est $f(c)$, avec $c$ une constante locale de $i$ (\textbf{Example Locality}). Sur Trains : \texttt{c = t800}.
+
+\st{Inductive step, Case 1 : le littéral est résolu avec un fait}
+\begin{itemize}
+  \item Les arguments \texttt{in} du littéral sont des constantes autorisées pour $i$ (\EN{inductive hypothesis}{hypothèse de récurrence}).
+  \item Le fait choisi a ces constantes à ses positions \texttt{in}.
+  \item \textbf{Si ce fait était chez un autre client $j$} : ses constantes seraient locales à $j$, donc pas
+        autorisées pour $i$. Contradiction.
+  \item Donc le fait est dans $F_i\cup\mathcal{R}=\mathcal{B}_i$. Ses autres constantes sont locales à $i$ ou
+        écrites dans $\mathcal{R}$ : autorisées. L'invariant est conservé.
+\end{itemize}
+Sur Trains : \texttt{has\_car(t800,B)} a \texttt{t800} en entrée, donc le fait est
+\texttt{has\_car(t800,t800\_c4)}, présent chez le client 2. Sa sortie \texttt{t800\_c4} est locale au client 2.
+
+\st{Inductive step, Case 2 : le littéral est résolu avec une règle de $\mathcal{R}\cup H$}
+\begin{itemize}
+  \item Les variables d'entrée de la tête reçoivent des constantes autorisées.
+  \item Dans le corps, chaque argument \texttt{in} est : une variable d'entrée de la tête, une constante de la règle
+        (autorisée), ou une variable de sortie d'un littéral \emph{précédent} (résolu avant, donc sa valeur est
+        autorisée par hypothèse de récurrence).
+  \item Comme toute variable de la tête apparaît dans le corps, les valeurs que la tête calcule sont aussi autorisées.
+\end{itemize}
+
+\st{Conclusion}
+Toutes les clauses utilisées par la réfutation sont dans $\mathcal{B}_i\cup H$. C'est donc une réfutation SLD
+de $\leftarrow e$ dans $\mathcal{B}_i\cup H$, et par \textbf{soundness} : $\mathcal{B}_i\cup H\models e$. \hfill $\square$
+
+% ---------------------------------------------------------------- 9
+\titrebox{9}{Counter-examples : pourquoi chaque assumption}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}L{3.4cm}L{6cm}L{7cm}@{}}
+\textbf{Assumption removed} & \textbf{Example} & \textbf{What breaks}\\\hline
+Directions & \texttt{quelqu\_un\_a\_fievre(X) :- fever(Y).} & \texttt{Y} libre : il s'unifie avec le fait \texttt{fever(bob)} d'un autre client. Le centralisé prouve, le client non.\\
+Separated Local Constants & Deux clients ont tous deux un wagon \texttt{c1} & Un fait du client $j$ peut être atteint depuis un but du client $i$ par cette constante commune.\\
+Example Locality & Un exemple dont la constante n'est locale à personne & La dérivation démarre hors de $\mathcal{B}_i$.\\
+\end{tabular}
+
+% ---------------------------------------------------------------- 10
+\titrebox{10}{Questions qu'un relecteur peut poser (reviewer questions)}
+
+\st{``Pourquoi ne pas simplement supposer la knowledge locality ?''}
+\begin{dire}
+Parce qu'elle découle de conditions plus simples, qu'on peut vérifier sur les données et le biais :
+les constantes sont séparées et les clauses respectent les directions. La démontrer permet de dire
+\emph{quand} elle est vraie.
+\end{dire}
+\begin{direEN}
+Because it follows from simpler conditions that can be checked on the data and the bias: constants are
+separated and clauses respect the directions. Proving it tells us \emph{when} it holds.
+\end{direEN}
+
+\st{``Pourquoi la complétude de SLD, et pas juste le $\models$ ?''}
+\begin{dire}
+Le $\models$ est une propriété sémantique. La complétude nous donne une dérivation concrète, dont on
+peut inspecter chaque clause utilisée. C'est ce qui permet de montrer que tous les faits utilisés sont locaux.
+\end{dire}
+\begin{direEN}
+Entailment is a semantic property. Completeness gives us a concrete derivation whose every used clause we can
+inspect, which lets us show that all facts used are local.
+\end{direEN}
+
+\st{``Que se passe-t-il si $\mathcal{R}$ contient des règles ?''}
+\begin{dire}
+La preuve les traite au Cas 2 : tant qu'elles respectent les directions et ne contiennent pas de constante locale,
+les valeurs qu'elles calculent restent autorisées.
+\end{dire}
+\begin{direEN}
+The proof handles them in Case 2: as long as they respect the directions and contain no local constant, the values
+they compute remain allowed.
+\end{direEN}
+
+\st{``Est-ce que cela dépend du solveur ou de Prolog ?''}
+\begin{dire}
+Non : la preuve porte sur l'existence d'une réfutation, pas sur la stratégie de recherche de Prolog.
+\end{dire}
+\begin{direEN}
+No: the proof is about the existence of a refutation, not about Prolog's search strategy.
+\end{direEN}
+
+% ---------------------------------------------------------------- 11
+\titrebox{11}{Proof vocabulary (le vocabulaire des preuves)}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}L{3.6cm}L{3.4cm}L{9.4cm}@{}}
+\textbf{English} & \textbf{Français} & \textbf{Meaning}\\\hline
+Definition & définition & fixe un objet ou une notation, sans preuve\\
+Assumption & hypothèse (de travail) & condition qu'on suppose vraie ; sans elle le résultat peut être faux\\
+Lemma & lemme & résultat intermédiaire, une brique pour un résultat plus important\\
+Proposition & proposition & résultat intéressant en lui-même, moins central qu'un théorème\\
+Theorem & théorème & résultat principal\\
+Corollary & corollaire & conséquence directe d'un théorème\\
+Remark & remarque & commentaire, sans nouveau résultat\\
+Proof & preuve, démonstration & enchaînement logique qui établit un énoncé\\
+Invariant & invariant & propriété vraie à chaque étape d'un processus\\
+Induction & récurrence & preuve en deux temps : cas de base, puis pas inductif\\
+Base case / Inductive step & cas de base / pas de récurrence & les deux parties d'une preuve par récurrence\\
+Inductive hypothesis & hypothèse de récurrence & ce qu'on suppose vrai pour l'étape $n$ pour montrer $n+1$\\
+Contradiction & contradiction, absurde & supposer le contraire et aboutir à une impossibilité\\
+If and only if ($\iff$) & si et seulement si & équivalence : les deux sens\\
+Entailment ($\models$) & conséquence logique & vrai dans tous les modèles\\
+Soundness / Completeness & correction / complétude & réfutation $\Rightarrow$ conséquence / conséquence $\Rightarrow$ réfutation\\
+\end{tabular}
+
+\vspace{8pt}
+\begin{tcolorbox}[colback=marine, colframe=marine, arc=0pt, boxrule=0pt,
+  halign=center, top=4pt, bottom=4pt]
+\color{white}\small Si je sais refaire la trace de \texttt{t800} et dire pourquoi chaque assumption est nécessaire, je sais la preuve.
+\end{tcolorbox}
+
+\end{document}

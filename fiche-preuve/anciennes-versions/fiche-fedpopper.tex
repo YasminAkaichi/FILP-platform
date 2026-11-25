@@ -1,0 +1,346 @@
+% Fiche 2 — La preuve de correction de FedPopper
+% Compilation : pdflatex fiche-fedpopper.tex   (a besoin de style-fiche.tex)
+\documentclass[10pt]{article}
+\input{style-fiche}
+
+\begin{document}
+
+% ================= EN-TÊTE =================
+\begin{minipage}[c]{0.64\textwidth}
+  {\fontsize{26}{28}\selectfont\bfseries\textcolor{marine}{PROOF}~CHEAT SHEET 2}\\[1pt]
+  {\small Correctness of FedPopper --- le fédéré fait les mêmes choix que Popper centralisé}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.34\textwidth}\raggedright
+  \normalsize \textbf{Same feedback} $\to$ \textbf{same constraints}\\ $\to$ \textbf{same hypothesis}
+\end{minipage}
+
+\vspace{5pt}
+
+% ================= LIGNE 1 =================
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{1}The goal (le but)}
+\sous{Claim}
+FedPopper (données réparties entre $K$ clients) et Popper centralisé (données poolées) testent \textbf{les mêmes hypothèses dans le même ordre} et renvoient \textbf{la même règle}.
+\sous{Proof plan}
+\begin{itemize}
+  \item \textbf{Lemma} : knowledge locality (fiche~1)
+  \item \textbf{Proposition} : l'issue agrégée = l'issue centralisée
+  \item \textbf{Theorem} : récurrence sur les tours
+\end{itemize}
+\begin{astuce}
+Le serveur ne voit jamais les exemples, mais en additionnant 4 nombres par client il retrouve la matrice de confusion centralisée.
+\end{astuce}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{2}The 4 assumptions}
+\begin{itemize}
+  \item \textbf{A1 Example Locality} : partition des exemples, au moins un positif et un négatif par client \fl les comptes s'additionnent
+  \item \textbf{A2 Separated Local Constants} \fl un fait se reconnaît à ses constantes
+  \item \textbf{A3 Directions} \fl chaque littéral part de l'exemple
+  \item \textbf{A4 Synchronous Rounds \& Deterministic Generation} : tous les clients répondent, le générateur est déterministe, exemples sans bruit \fl même état $\Rightarrow$ même choix
+\end{itemize}
+\begin{astuce}
+A1--A3 portent sur les \textbf{données et le biais}. A4 porte sur l'\textbf{exécution}.
+\end{astuce}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\begin{bloc}{\num{3}Setting (cadre)}
+\begin{itemize}
+  \item \textbf{Client} $i$ : $\mathcal{D}_i=\langle E_i^+,E_i^-,\mathcal{B}_i\rangle$, $\mathcal{B}_i=F_i\cup\mathcal{R}$
+  \item \textbf{Pooled dataset} : $E^\pm=\bigcup_i E_i^\pm$, $\mathcal{B}=\bigcup_i F_i\cup\mathcal{R}$
+  \item \textbf{Outcome} $(\varepsilon^+,\varepsilon^-)$ : $\varepsilon^+=\mathit{ALL}$ si $FN=0$, $\mathit{NONE}$ si $TP=0$, sinon $\mathit{SOME}$ ; $\varepsilon^-=\mathit{NONE}$ si $FP=0$, sinon $\mathit{SOME}$
+  \item \textbf{Score} $s=TP+TN$
+  \item \textbf{Aggregation} : $A_\varepsilon$ (ALL si tous ALL, NONE si tous NONE, sinon SOME), $A_s=\sum_i s_i$
+\end{itemize}
+\end{bloc}
+\end{minipage}
+
+\vspace{4pt}
+
+% ================= LIGNE 2 =================
+\begin{minipage}[t]{0.5\textwidth}
+\begin{bloc}{\num{4}Proposition : Aggregation Correctness}
+\begin{enumerate}[leftmargin=12pt, itemsep=1pt, topsep=1pt]
+  \item \textbf{Local = global coverage} (Lemma, A1--A3) : $\mathcal{B}\cup H\models e\iff\mathcal{B}_i\cup H\models e$ pour $e\in E_i$.
+  \item \textbf{Additive counts} (A1) : $TP=\sum_i TP_i$, idem $FN,FP,TN$.
+  \item \textbf{Outcome from counts} : $FN=0\iff FN_i=0\ \forall i$ ; $TP=0\iff TP_i=0\ \forall i$ ; $FP=0\iff FP_i=0\ \forall i$ (comptes $\ge 0$).
+  \item \textbf{Conclusion} : $A_\varepsilon(\{\varepsilon_i\})$ = issue sur le pooled dataset ; $A_s=\sum_i(TP_i+TN_i)=TP+TN$.
+\end{enumerate}
+\begin{astuce}
+Le piège : un client avec \emph{zéro} positif serait à la fois ALL et NONE $\Rightarrow$ A1 impose au moins un positif et un négatif par client.
+\end{astuce}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\begin{bloc}{\num{5}Theorem : Correctness of FedPopper}
+\textbf{Statement.} Sous A1--A4, pour tout tour $t\ge1$ : $H_t^{\mathrm F}=H_t^{\mathrm C}$ et $\mathcal{C}_t^{\mathrm F}=\mathcal{C}_t^{\mathrm C}$ ; les deux s'arrêtent au même tour avec le même résultat (même $H_{\text{best}}$ si pas de solution).\par\vspace{2pt}
+\textbf{Proof by induction} sur $t$ :
+\begin{enumerate}[leftmargin=12pt, itemsep=1pt, topsep=1pt]
+  \item \textbf{Base} : $\mathcal{C}_0=\emptyset$ des deux côtés.
+  \item \textbf{Generate} : $\mathcal{C}_{t-1}$ égaux + A4 $\Rightarrow$ même $H_t$.
+  \item \textbf{Test + aggregate} : Proposition $\Rightarrow$ même issue, même score.
+  \item \textbf{Best / stop} : mêmes comparaisons $\Rightarrow$ même $H_{\text{best}}$, même arrêt.
+  \item \textbf{Constrain} : dépend de $(H_t,\text{issue})$ seulement $\Rightarrow$ $\mathcal{C}_t$ égaux.
+\end{enumerate}
+\end{bloc}
+\end{minipage}
+
+\vspace{4pt}
+
+% ================= LIGNE 3 =================
+\begin{minipage}[t]{0.58\textwidth}
+\begin{bloc}{\num{6}On Trains (3 clients, vraie partition)}
+{\scriptsize
+Clients : C1 = \{t808,t107 / t419,t623\}, C2 = \{t746,t800 / t624,t861\}, C3 = \{t988 / t184\}.\par\vspace{2pt}
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}l c c c c c l@{}}
+\textbf{Program} & \textbf{Client} & TP & FN & FP & TN & \textbf{local outcome}\\\hline
+\multirow{3}{*}{\#1 \texttt{has\_car,short}} & C1 & 0 & 2 & 2 & 0 & (NONE, SOME)\\
+ & C2 & 2 & 0 & 2 & 0 & (ALL, SOME)\\
+ & C3 & 1 & 0 & 1 & 0 & (ALL, SOME)\\
+\textbf{global} & & 3 & 2 & 5 & 0 & \textbf{(SOME, SOME)}\\\hline
+\multirow{3}{*}{\#9 \texttt{has\_load,three\_load}} & C1 & 2 & 0 & 0 & 2 & (ALL, NONE)\\
+ & C2 & 0 & 2 & 0 & 2 & (NONE, NONE)\\
+ & C3 & 0 & 1 & 0 & 1 & (NONE, NONE)\\
+\textbf{global} & & 2 & 3 & 0 & 5 & \textbf{(SOME, NONE)}\\
+\end{tabular}}
+\end{bloc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.4\textwidth}
+\begin{bloc}{\num{7}Pitfalls (les pièges)}
+\begin{itemize}
+  \item \textbf{Program \#9, client 1} : seul, il verrait (ALL, NONE) = ``solution'' $\to$ faux. Il faut \textbf{agréger}.
+  \item \textbf{Générateur non déterministe} : deux exécutions peuvent diverger même avec les mêmes contraintes.
+  \item \textbf{Client absent} : l'agrégation porte sur une partie des exemples seulement.
+  \item \textbf{Ce que le théorème ne dit pas} : rien sur la confidentialité, le bruit, ni l'asynchrone.
+\end{itemize}
+\end{bloc}
+\end{minipage}
+
+\vspace{5pt}
+
+\begin{tcolorbox}[colback=marine, colframe=marine, arc=0pt, boxrule=0pt,
+  halign=center, top=3pt, bottom=3pt]
+\color{white}\small Same state + same feedback = same next step. Induction turns this one-round fact into a whole-run theorem.
+\end{tcolorbox}
+
+% =====================================================================
+%                    PAGES DÉTAILLÉES
+% =====================================================================
+\detailpages
+
+{\fontsize{24}{26}\selectfont\bfseries\textcolor{marine}{LA PREUVE DE}~FEDPOPPER}\\[2pt]
+{\normalsize Chaque notion de théorie est donnée en anglais (en \textbf{gras}) avec sa traduction.
+Les indices suivent l'Algorithme~1 : au tour $t$, le serveur génère $H_t$ à partir de $\mathcal{C}_{t-1}$.}
+
+% ---------------------------------------------------------------- 1
+\titrebox{1}{Setting and notation (cadre et notations)}
+
+\st{Les objets}
+\begin{itemize}
+  \item $K$ \EN{clients}{clients}. Le client $i$ possède $\mathcal{D}_i=\langle E_i^+,E_i^-,\mathcal{B}_i\rangle$ avec $\mathcal{B}_i=F_i\cup\mathcal{R}$ :
+        $F_i$ = faits locaux, $\mathcal{R}$ = connaissances partagées par tous (règles générales, éventuellement des faits communs).
+  \item \EN{Pooled dataset}{jeu de données poolé} : $\mathcal{D}=\langle E^+,E^-,\mathcal{B}\rangle$ avec $E^\pm=\bigcup_iE_i^\pm$ et
+        $\mathcal{B}=\bigl(\bigcup_iF_i\bigr)\cup\mathcal{R}$. C'est ce que verrait Popper centralisé.
+  \item \EN{Local constants}{constantes locales} du client $i$ : les constantes qui apparaissent dans $F_i$.
+  \item \EN{Hypothesis space}{espace d'hypothèses} $\mathcal{H}$ : fini, défini par le \EN{language bias}{biais de langage}.
+\end{itemize}
+
+\st{Confusion matrix, outcome, score}
+Pour un dataset et une hypothèse $H$ : $TP=|\{e\in E^+:\mathcal{B}\cup H\models e\}|$, $FN=|E^+|-TP$,
+$FP=|\{e\in E^-:\mathcal{B}\cup H\models e\}|$, $TN=|E^-|-FP$.
+\begin{center}
+\begin{tabular}{@{}l l@{}}
+$\varepsilon^+=\mathit{ALL}$ & si $FN=0$ (tous les positifs couverts)\\
+$\varepsilon^+=\mathit{NONE}$ & si $TP=0$ (aucun positif couvert)\\
+$\varepsilon^+=\mathit{SOME}$ & sinon\\
+$\varepsilon^-=\mathit{NONE}$ & si $FP=0$ (aucun négatif couvert)\\
+$\varepsilon^-=\mathit{SOME}$ & sinon\\
+\textbf{score} & $TP+TN$\\
+\end{tabular}
+\end{center}
+\ce{l'outcome est une \emph{fonction des comptes}. C'est ce qui permet d'additionner les comptes des clients.}
+
+\st{Aggregation functions}
+\begin{center}
+$A_\varepsilon(\{\varepsilon_i\})=\begin{cases}\mathit{ALL}&\text{si }\varepsilon_i=\mathit{ALL}\ \forall i\\ \mathit{NONE}&\text{si }\varepsilon_i=\mathit{NONE}\ \forall i\\ \mathit{SOME}&\text{sinon}\end{cases}$
+\qquad $A_s(\{s_i\})=\sum_{i=1}^{K}s_i$
+\end{center}
+
+% ---------------------------------------------------------------- 2
+\titrebox{2}{The assumptions (les hypothèses), une par une}
+
+\st{Assumption 1 --- Example Locality}
+\begin{enonce}{Assumption 1 (Example Locality)}
+$\{E_1^+,\dots,E_K^+\}$ est une partition de $E^+$, $\{E_1^-,\dots,E_K^-\}$ est une partition de $E^-$,
+chaque client a au moins un positif et un négatif, et pour tout $f(c)\in E_i^+\cup E_i^-$ la constante $c$ est locale au client $i$.
+\end{enonce}
+\textbf{Pourquoi :} sans partition, un exemple peut être compté deux fois ou oublié, donc les comptes globaux sont faux.
+\textbf{Sans elle :} la somme des $TP_i$ ne vaut plus $TP$.
+\textbf{Trains :} 2+2+1 = 5 positifs et 2+2+1 = 5 négatifs, sans doublon.
+
+\st{Assumption 2 --- Separated Local Constants}
+\begin{enonce}{Assumption 2 (Separated Local Constants)}
+Les constantes locales de deux clients sont disjointes, et ni $\mathcal{R}$ ni aucune hypothèse $H\in\mathcal{H}$ ne contient de constante locale d'un client.
+\end{enonce}
+\textbf{Pourquoi :} une constante locale permet de reconnaître à quel client appartient un fait. \textbf{Sans elle :} un fait d'un autre client peut être atteint par une constante partagée.
+\textbf{Trains :} chaque train, wagon et chargement a son propre identifiant (\texttt{t800\_c1}\ldots) et $\mathcal{R}=\emptyset$.
+
+\st{Assumption 3 --- Directions}
+\begin{enonce}{Assumption 3 (Directions)}
+Chaque prédicat a au moins un argument \texttt{in}. Dans toute clause de $\mathcal{R}$ et de toute hypothèse $H$, chaque argument \texttt{in}
+d'un littéral du corps est (i) une variable \texttt{in} de la tête, (ii) une constante de la clause, ou (iii) une variable \texttt{out} d'un
+littéral précédent ; et toute variable de la tête apparaît dans le corps.
+\end{enonce}
+\textbf{Pourquoi :} on part toujours de l'exemple et on ne cherche jamais ``n'importe quoi'' dans le BK.
+\textbf{Sans elle :} \texttt{fever(Y)} avec \texttt{Y} libre peut s'unifier avec un fait d'un autre client.
+\textbf{Trains :} le \texttt{bias.pl} déclare \texttt{in} sur le premier argument de chaque prédicat.
+
+\st{Assumption 4 --- Synchronous Rounds and Deterministic Generation}
+\begin{enonce}{Assumption 4 (Synchronous Rounds and Deterministic Generation)}
+À chaque tour tous les clients répondent. Le générateur est déterministe : pour le même ensemble de contraintes il renvoie la même hypothèse
+(ou $\bot$ s'il n'y en a aucune). Les exemples sont sans bruit et l'évaluation d'une hypothèse termine sur tout exemple.
+\end{enonce}
+\textbf{Pourquoi :} la récurrence compare deux exécutions : elles doivent faire les mêmes choix à état égal.
+\textbf{Sans elle :} deux exécutions peuvent diverger sans qu'il y ait d'erreur (clingo peut choisir parmi plusieurs modèles valides).
+
+% ---------------------------------------------------------------- 3
+\titrebox{3}{Lemma (Knowledge Locality) --- résumé}
+\begin{enonce}{Lemma 1 (Knowledge Locality)}
+Sous A1--A3, pour tout client $i$, toute hypothèse $H$ et tout $e\in E_i^+\cup E_i^-$ :
+$\mathcal{B}\cup H\models e\iff\mathcal{B}_i\cup H\models e$.
+\end{enonce}
+\textbf{Preuve en trois lignes.} ($\Leftarrow$) par \EN{monotonicity}{monotonie}, car $\mathcal{B}_i\subseteq\mathcal{B}$.
+($\Rightarrow$) par complétude de SLD on a une réfutation ; un \EN{invariant}{invariant} (``les arguments \texttt{in} des littéraux sélectionnés sont des constantes autorisées pour $i$'')
+montre par récurrence que chaque fait utilisé est dans $\mathcal{B}_i$ ; par correction de SLD, $\mathcal{B}_i\cup H\models e$.
+\ce{le détail complet est dans la \textbf{fiche~1}.}
+
+% ---------------------------------------------------------------- 4
+\titrebox{4}{Proposition (Aggregation Correctness)}
+\begin{enonce}{Proposition 1 (Aggregation Correctness)}
+Sous A1--A3, pour toute hypothèse $H$ diffusée par le serveur, l'issue $(\varepsilon^+_{\mathrm{global}},\varepsilon^-_{\mathrm{global}})$ calculée
+par FedPopper avec $A_\varepsilon$ est l'issue de $H$ sur le dataset poolé $\mathcal{D}$. De plus $A_s(\{s_i\})=TP+TN$.
+\end{enonce}
+
+\st{Proof, étape par étape}
+\textbf{Étape 1 (couverture).} Par le Lemme 1, un exemple $e\in E_i$ est couvert avec $\mathcal{B}$ si et seulement s'il est couvert avec $\mathcal{B}_i$.
+
+\textbf{Étape 2 (comptes additifs).} Par A1, chaque exemple est dans exactement un $E_i$. Donc
+$TP=\sum_iTP_i$, $FN=\sum_iFN_i$, $FP=\sum_iFP_i$, $TN=\sum_iTN_i$.
+
+\textbf{Étape 3 (issue).} Chaque client applique la définition de l'issue à ses comptes locaux (ses ensembles sont non vides par A1) :
+$\varepsilon_i^+=\mathit{ALL}\iff FN_i=0$, $\varepsilon_i^+=\mathit{NONE}\iff TP_i=0$, $\varepsilon_i^-=\mathit{NONE}\iff FP_i=0$.
+Comme les comptes sont positifs ou nuls, une somme est nulle si et seulement si tous ses termes le sont :
+$FN=0\iff FN_i=0\ \forall i$, $TP=0\iff TP_i=0\ \forall i$, $FP=0\iff FP_i=0\ \forall i$.
+
+\textbf{Étape 4 (conclusion).} Donc $\varepsilon^+=\mathit{ALL}$ si et seulement si tous les $\varepsilon_i^+$ sont $\mathit{ALL}$, $\varepsilon^+=\mathit{NONE}$ si et seulement si tous sont $\mathit{NONE}$,
+et $\mathit{SOME}$ sinon : c'est exactement $A_\varepsilon$. Pour $\varepsilon^-$, c'est pareil avec $FP$. Enfin
+$A_s=\sum_i(TP_i+TN_i)=TP+TN$. \hfill $\square$
+
+\st{Vérification sur Trains}
+\begin{tabular}{@{}l c c c c c l@{}}
+\textbf{Program} & \textbf{Client} & $s_i=TP_i+TN_i$ & TP & FN & FP+TN & \textbf{local outcome}\\\hline
+\#1 \texttt{has\_car, short} & C1 / C2 / C3 & 0 / 2 / 1 & 0/2/1 & 2/0/0 & 2/2/1 & (NONE,SOME) / (ALL,SOME) / (ALL,SOME)\\
+\textbf{aggregated} & & $A_s=3$ & 3 & 2 & 5 & (SOME, SOME)\\\hline
+\#9 \texttt{has\_load, three\_load} & C1 / C2 / C3 & 4 / 2 / 1 & 2/0/0 & 0/2/1 & 2/2/1 & (ALL,NONE) / (NONE,NONE) / (NONE,NONE)\\
+\textbf{aggregated} & & $A_s=7$ & 2 & 3 & 5 & (SOME, NONE)\\
+\end{tabular}
+\begin{piege}
+\textbf{Programme \#9 :} le client 1 voit localement (ALL, NONE), c'est-à-dire ``solution''. L'agrégation montre que la solution est incomplète
+(2 positifs sur 5). Un client ne peut pas décider seul.
+\end{piege}
+
+% ---------------------------------------------------------------- 5
+\titrebox{5}{Aligning with Algorithm 1 (l'algorithme)}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}L{4.2cm}L{12.2cm}@{}}
+\textbf{Étape de l'algorithme} & \textbf{Rôle dans la preuve}\\\hline
+$H_t\leftarrow\textsc{Generate}(\mathcal{C}_{t-1})$ & Même état $\Rightarrow$ même $H_t$ (A4). Si $H_t=\bot$ : même arrêt.\\
+broadcast $H_t$, \textsc{ClientTest} & Chaque client calcule $(\varepsilon_i^+,\varepsilon_i^-,s_i)$ avec son BK local.\\
+$A_\varepsilon$, $A_s$ & Proposition 1 : même issue et même score que le centralisé.\\
+mise à jour de $H_{\text{best}}$ ($s_{\text{best}}\leftarrow-\infty$, test strict $s_t>s_{\text{best}}$) & Mêmes scores, mêmes comparaisons $\Rightarrow$ même $H_{\text{best}}$.\\
+test d'arrêt $(\mathit{ALL},\mathit{NONE})$ & Dépend seulement de l'issue $\Rightarrow$ même tour d'arrêt.\\
+$\mathcal{C}_t\leftarrow\mathcal{C}_{t-1}\cup\textsc{Constrain}(H_t,\varepsilon^+,\varepsilon^-)$ & Dépend seulement de $(H_t,\text{issue})$ $\Rightarrow$ $\mathcal{C}_t$ égaux.\\
+\end{tabular}
+
+% ---------------------------------------------------------------- 6
+\titrebox{6}{Theorem (Correctness of FedPopper)}
+\begin{enonce}{Theorem 1 (Correctness of FedPopper)}
+Sous A1--A4, lançons l'Algorithme~1 sur les clients $(\mathcal{D}_i)_{i=1}^{K}$ (FedPopper) et sur le dataset poolé $\mathcal{D}$ (Popper centralisé),
+avec le même biais $D$ et le même générateur. Pour tout tour $t\ge1$ : $H_t^{\mathrm F}=H_t^{\mathrm C}$ et $\mathcal{C}_t^{\mathrm F}=\mathcal{C}_t^{\mathrm C}$.
+Les deux s'arrêtent au même tour avec la même hypothèse ; en particulier, s'il n'y a pas d'hypothèse parfaite, elles renvoient le même $H_{\text{best}}$.
+\end{enonce}
+
+\st{Proof (par récurrence)}
+On montre par \EN{induction}{récurrence} sur $t$ la propriété $\mathcal{P}(t)$ : \emph{au début du tour $t$, $\mathcal{C}_{t-1}^{\mathrm F}=\mathcal{C}_{t-1}^{\mathrm C}$}.
+
+\textbf{Base case ($t=1$).} Les deux partent du même biais et de $\mathcal{C}_0=\emptyset$.
+
+\textbf{Inductive step.} Supposons $\mathcal{P}(t)$ (\EN{inductive hypothesis}{hypothèse de récurrence}).
+\begin{enumerate}[leftmargin=14pt, itemsep=1pt, topsep=2pt]
+  \item \textsc{Generate} : par A4, même $H_t$ (ou même $\bot$ : les deux renvoient $H_{\text{best}}$ à ce tour).
+  \item \textsc{ClientTest} et agrégation : par la Proposition 1, mêmes issue et score.
+  \item $H_{\text{best}}$ : mêmes scores et même inégalité stricte $\Rightarrow$ mises à jour aux mêmes tours, même valeur.
+  \item Arrêt : le test ne dépend que de l'issue $\Rightarrow$ les deux renvoient $H_t$ au même tour, ou aucun.
+  \item \textsc{Constrain} : sa sortie ne dépend que de $H_t$ et de l'issue $\Rightarrow$ $\mathcal{C}_t^{\mathrm F}=\mathcal{C}_t^{\mathrm C}$, c'est $\mathcal{P}(t+1)$.
+\end{enumerate}
+\textbf{Termination.} $\mathcal{H}$ est fini et chaque tour interdit au moins l'hypothèse testée, donc au plus $|\mathcal{H}|$ tours. \hfill $\square$
+
+\st{Ce que le théorème ne dit pas}
+\begin{itemize}
+  \item \textbf{Rien sur la confidentialité} : il parle de l'\emph{égalité des résultats}, pas de ce que les messages révèlent.
+  \item \textbf{Pas de données bruitées} ni de clients asynchrones ou absents.
+  \item Il suppose que les mêmes contraintes sont produites à partir de $(H_t,\text{issue})$ : c'est une propriété de la procédure Popper (fiche~3).
+\end{itemize}
+
+% ---------------------------------------------------------------- 7
+\titrebox{7}{Trains : une exécution complète}
+\begin{itemize}
+  \item \textbf{Espace} : 1433 programmes de taille 3 à 6 (6 / 29 / 185 / 1213).
+  \item \textbf{Tour 1} : $H_1=$ \texttt{has\_car(A,B), short(B)}. Issues locales (NONE,SOME), (ALL,SOME), (ALL,SOME), agrégées en (SOME,SOME) $\Rightarrow$ 18 contraintes ajoutées.
+  \item \textbf{Tour 48} : \texttt{f(A) :- has\_car(A,B), has\_car(A,C), long(C), three\_wheels(B), two\_wheels(C).}
+        Issues locales (ALL,NONE) pour les trois clients, agrégées en (ALL,NONE) : arrêt. Scores locaux 4, 4 et 2, somme 10 = TP + TN centralisés.
+  \item \textbf{Bilan} : 48 programmes testés sur 1433 (environ 3,3~\%).
+\end{itemize}
+\begin{piege}
+Ces 48 tours viennent de ton expérience 933 et de mon rejeu. Ton chapitre Collaboration parle de 38 programmes (et de ``46 rounds''), à corriger ou à justifier.
+\end{piege}
+
+% ---------------------------------------------------------------- 8
+\titrebox{8}{Reviewer questions (questions de relecteur)}
+
+\st{``Pourquoi les comptes ne suffisent-ils pas à mesurer la fuite d'information ?''}
+\begin{dire}
+Le théorème garantit l'égalité des résultats, pas la confidentialité. Le score $s_i=TP_i+TN_i$ et l'issue sont des agrégats, mais ils révèlent tout de même
+un peu d'information sur les données locales. Une analyse de confidentialité est un sujet distinct.
+\end{dire}
+\begin{direEN}
+The theorem guarantees equality of results, not privacy. The score and the outcome are aggregates, but they still reveal some information about local data.
+A privacy analysis is a separate topic.
+\end{direEN}
+
+\st{``Que se passe-t-il si le générateur n'est pas déterministe ?''}
+\begin{dire}
+Les deux exécutions peuvent choisir deux hypothèses valides différentes à état égal. Elles restent correctes chacune, mais plus identiques : le théorème d'équivalence ne s'applique plus.
+\end{dire}
+\begin{direEN}
+The two runs may pick two different valid hypotheses from the same state. Each remains correct, but they are no longer identical, so the equivalence theorem no longer applies.
+\end{direEN}
+
+\st{``Pourquoi la récurrence ?''}
+\begin{dire}
+Parce que la proposition ne prouve que l'égalité de l'issue \emph{pour un $H$ donné}. Pour conclure sur toute l'exécution il faut montrer que les états restent égaux tour après tour.
+\end{dire}
+\begin{direEN}
+Because the proposition only proves equality of the outcome \emph{for a given $H$}. To conclude about the whole run, we must show that the states stay equal round after round.
+\end{direEN}
+
+\vspace{8pt}
+\begin{tcolorbox}[colback=marine, colframe=marine, arc=0pt, boxrule=0pt,
+  halign=center, top=4pt, bottom=4pt]
+\color{white}\small Si je sais dire pourquoi A1, A2, A3 et A4 sont chacune nécessaires, je sais défendre le théorème.
+\end{tcolorbox}
+
+\end{document}

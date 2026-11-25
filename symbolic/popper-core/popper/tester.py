@@ -38,6 +38,13 @@ class Tester():
             print(f"[Tester]  Consulting Prolog file: {x}")
             self.prolog.consult(x)
 
+        # A federated client holds only part of the examples, so its background
+        # knowledge can lack every fact of some body predicate (e.g. no
+        # strange/1 fact in a 4-example partition). Prolog would then raise an
+        # existence_error when a hypothesis uses it, instead of just failing.
+        # Declaring such predicates dynamic makes them simply have no solution.
+        self._declare_missing_body_predicates()
+
         # load examples
         list(self.prolog.query('load_examples'))
 
@@ -45,6 +52,22 @@ class Tester():
         self.neg = [x['I'] for x in self.prolog.query('current_predicate(neg_index/2),neg_index(I,_)')]
 
         self.prolog.assertz(f'timeout({self.eval_timeout})')
+
+    def _declare_missing_body_predicates(self):
+        import re
+        bias_path = getattr(self.settings, "bias_file", None)
+        if not bias_path or not os.path.exists(bias_path):
+            return
+        try:
+            with open(bias_path) as handle:
+                bias_text = handle.read()
+        except OSError:
+            return
+        for name, arity in re.findall(
+            r"body_pred\(\s*([a-z][A-Za-z0-9_]*)\s*,\s*(\d+)\s*\)", bias_text
+        ):
+            if not list(self.prolog.query(f"current_predicate({name}/{arity})")):
+                list(self.prolog.query(f"dynamic({name}/{arity})"))
 
     def first_result(self, q):
         return list(self.prolog.query(q))[0]
