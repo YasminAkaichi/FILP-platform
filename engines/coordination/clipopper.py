@@ -8,6 +8,7 @@ import re
 import signal
 import socket
 import sys
+import tempfile
 import time
 import traceback
 
@@ -147,6 +148,37 @@ def cli_prompt():
 
 
 # ======================================================
+
+def sanitize_bk_for_target(bk_file: str, bias_file: str) -> str:
+    """Return a copy of bk_file without one-line clauses defining a head
+    predicate of the bias (the learned target). Prolog treats such a predicate
+    as static once consulted, and Popper 1.1.0 then fails when asserting
+    hypotheses for it (permission_error). Returns bk_file if nothing to
+    remove. Same cleaning as the Collaboration client."""
+    try:
+        with open(bias_file) as handle:
+            heads = set(re.findall(
+                r"head_pred\(\s*([a-z][A-Za-z0-9_]*)\s*,", handle.read()
+            ))
+        if not heads:
+            return bk_file
+        pattern = re.compile(r"^\s*(%s)\s*\(" % "|".join(map(re.escape, heads)))
+        kept, removed = [], []
+        with open(bk_file) as handle:
+            for line in handle.read().splitlines():
+                (removed if pattern.match(line) else kept).append(line)
+        if not removed:
+            return bk_file
+        folder = tempfile.mkdtemp(prefix="filp_bk_")
+        clean = os.path.join(folder, "bk_sanitized.pl")
+        with open(clean, "w") as handle:
+            handle.write("\n".join(kept) + "\n")
+        print(f"[Client] Removed {len(removed)} clause(s) defining the target "
+              f"predicate from the background knowledge: {removed[:3]}", flush=True)
+        return clean
+    except OSError:
+        return bk_file
+
 #  DATASET HELPERS
 # ======================================================
 
@@ -176,6 +208,7 @@ def initialisation(
     bk_file, ex_file, bias_file = load_kbpath(
         path_dir
     )
+    bk_file = sanitize_bk_for_target(bk_file, bias_file)
 
     import os as _os
 
